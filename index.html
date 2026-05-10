@@ -29,12 +29,7 @@
   input[type=range]:focus { outline: none; }
   input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 8px; cursor: pointer; background: #444; border-radius: 4px; }
   input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 18px; width: 18px; border-radius: 50%; background: var(--accent); cursor: pointer; margin-top: -5px; }
-  input[type=range]::-moz-range-track { width: 100%; height: 8px; cursor: pointer; background: #444; border-radius: 4px; }
-  input[type=range]::-moz-range-thumb { height: 18px; width: 18px; border-radius: 50%; background: var(--accent); cursor: pointer; border: none; }
-  input[type=range]::-ms-track { width: 100%; cursor: pointer; background: transparent; border-color: transparent; color: transparent; }
-  input[type=range]::-ms-fill-lower, input[type=range]::-ms-fill-upper { background: #444; border-radius: 4px; }
-  input[type=range]::-ms-thumb { height: 16px; width: 16px; border-radius: 50%; background: var(--accent); cursor: pointer; margin-top: 0; }
-  #saveMenu { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; color:#333; border:3px solid var(--accent); padding:20px; display:none; z-index:11000; width:440px; border-radius:12px; box-shadow:0 10px 50px rgba(0,0,0,0.12); }
+  #saveMenu { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; color:#333; border:3px solid var(--accent); padding:20px; display:none; z-index:11000; width:440px; border-radius:12px; box-shadow:0 10px 50px rgba(0,0,0,0.5); }
   .save-slot { display:flex; justify-content:space-between; align-items:center; padding:10px; border-bottom:1px solid #eee; font-size:14px; color:#333; }
   #menuSaveBtn { background: #28a745 !important; color: white !important; border: 1px solid #1e7e34 !important; font-weight: bold; cursor: pointer; }
   .load-btn { background: #007bff !important; color: white !important; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
@@ -92,16 +87,16 @@
   <button id="exitSaveMenuBtn" class="tool" style="background:#666; margin-top:10px;">Close Menu</button>
 </div>
 <script>
-  /* FIX: Explicitly configure Gun to force LocalStorage and use more reliable relays */
+  /* FIX: Old versions worked because they avoided triggering "Tracking Blockers" */
+  /* This setup uses memory-only mode to bypass Edge/Firefox's strict storage blocks */
   const gun = Gun({
     peers: [
       'https://gunjs.herokuapp.com/gun',
       'https://gun-manhattan.herokuapp.com/gun',
-      'https://peer.wall.org/gun',
-      'https://gun-matrix.herokuapp.com/gun'
+      'https://peer.wall.org/gun'
     ],
-    localStorage: true, // Forces Gun to use LocalStorage even with prevention on
-    radisk: false       // Disables complex indexedDB storage that triggers trackers
+    localStorage: false, // Bypasses the tracking prevention block
+    indexedDB: false     // Prevents the browser from killing the connection early
   });
 
   const user = gun.user().recall({storage: true});
@@ -122,7 +117,7 @@
     lobbyID = (document.getElementById('lobbyIn').value || 'GLOBAL').trim().toUpperCase();
     if(!u || !p) return alert("Password required.");
     user.auth(u, p, (ack) => {
-      if(ack.err) return alert("Auth failed. Ensure Tracking Prevention is OFF.");
+      if(ack.err) return alert("Auth failed. Ensure site is NOT in Private Mode.");
       userName = u;
       document.getElementById('authOverlay').style.display = 'none';
       document.getElementById('mainApp').style.display = 'flex';
