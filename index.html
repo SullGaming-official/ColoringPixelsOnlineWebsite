@@ -92,7 +92,7 @@
   <button id="exitSaveMenuBtn" class="tool" style="background:#666; margin-top:10px;">Close Menu</button>
 </div>
 <script>
-  /* FIX: Updated Gun initialization with reliable nodes and storage configuration */
+  /* Updated Connection Logic to handle persistent WebSocket failures */
   const gun = Gun({
     peers: [
       'https://gun-manhattan.herokuapp.com/gun',
@@ -100,8 +100,9 @@
       'https://gun-matrix.herokuapp.com/gun',
       'https://www.raygun.live/gun'
     ],
-    localStorage: true, // Forces local storage use despite some prevention settings
-    radisk: false       // Disables complex storage that often triggers tracking blocks
+    localStorage: true,
+    radisk: false,
+    retry: 1500
   });
 
   const user = gun.user().recall({storage: true});
@@ -122,7 +123,7 @@
     lobbyID = (document.getElementById('lobbyIn').value || 'GLOBAL').trim().toUpperCase();
     if(!u || !p) return alert("Password required.");
     user.auth(u, p, (ack) => {
-      if(ack.err) return alert("Auth failed.");
+      if(ack.err) return alert("Auth failed. Check connection or credentials.");
       userName = u;
       document.getElementById('authOverlay').style.display = 'none';
       document.getElementById('mainApp').style.display = 'flex';
