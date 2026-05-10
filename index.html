@@ -92,7 +92,14 @@
   <button id="exitSaveMenuBtn" class="tool" style="background:#666; margin-top:10px;">Close Menu</button>
 </div>
 <script>
-  const gun = Gun(['https://gun-manhattan.herokuapp.com/gun', 'https://peer.wall.org/gun']);
+  /* Updated Gun initialization with multiple reliable relays to fix cross-browser/device login */
+  const gun = Gun([
+    'https://gun-manhattan.herokuapp.com/gun',
+    'https://peer.wall.org/gun',
+    'https://gundb-relay.herokuapp.com/gun',
+    'https://gun-us.herokuapp.com/gun',
+    'https://gun-eu.herokuapp.com/gun'
+  ]);
   const user = gun.user().recall({storage: true});
   let peer, myID, lobbyID, userName, connections = {}; 
   let GRID_SIZE = 64;
