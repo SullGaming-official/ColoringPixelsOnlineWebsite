@@ -5,16 +5,20 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
 <title>ColoringPixelsOnline</title>
-<script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/gun/sea.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <style>
   :root{--accent:#3D2CDE;--bg:#1a1a1a;--sidebar-w:260px;--muted:#6b7280}
   body, html { margin:0; padding:0; height:100%; width:100%; font-family:Inter,system-ui,Arial; background:var(--bg); color:white; overflow:hidden; touch-action:none; }
   #authOverlay { position:fixed; inset:0; background:#111; z-index:10000; display:flex; align-items:center; justify-content:center; }
   .auth-box { background:#222; padding:30px; border-radius:12px; width:90%; max-width:340px; display:flex; flex-direction:column; gap:12px; border:1px solid #333; }
+  .auth-box h2 { text-align:center; margin:0; }
+  .auth-tab { display:flex; gap:8px; }
+  .auth-tab button { background:#333; font-size:12px; }
+  .auth-tab button.active { background:var(--accent); }
   input, button { padding:12px; border-radius:6px; border:1px solid #444; font-size:14px; background:#333; color:white; width:100%; box-sizing:border-box; }
   button { background:var(--accent); border:none; font-weight:bold; cursor:pointer; }
+  #authError { color:#f87171; font-size:12px; text-align:center; display:none; }
   #nav { height:50px; background:var(--accent); display:flex; align-items:center; justify-content:space-between; padding:0 15px; border-bottom:1px solid rgba(0,0,0,0.1); font-size:13px; font-weight:bold; }
   #mainApp { display:none; height:100%; width:100%; flex-direction:column; }
   #layout { flex:1; display:flex; position:relative; overflow:hidden; }
@@ -29,6 +33,8 @@
   input[type=range]:focus { outline: none; }
   input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 8px; cursor: pointer; background: #444; border-radius: 4px; }
   input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 18px; width: 18px; border-radius: 50%; background: var(--accent); cursor: pointer; margin-top: -5px; }
+  input[type=range]::-moz-range-track { width: 100%; height: 8px; cursor: pointer; background: #444; border-radius: 4px; }
+  input[type=range]::-moz-range-thumb { height: 18px; width: 18px; border-radius: 50%; background: var(--accent); cursor: pointer; border: none; }
   #saveMenu { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; color:#333; border:3px solid var(--accent); padding:20px; display:none; z-index:11000; width:440px; border-radius:12px; box-shadow:0 10px 50px rgba(0,0,0,0.5); }
   .save-slot { display:flex; justify-content:space-between; align-items:center; padding:10px; border-bottom:1px solid #eee; font-size:14px; color:#333; }
   #menuSaveBtn { background: #28a745 !important; color: white !important; border: 1px solid #1e7e34 !important; font-weight: bold; cursor: pointer; }
@@ -40,12 +46,16 @@
 <body>
 <div id="authOverlay">
   <div class="auth-box">
-    <h2 style="text-align:center;margin:0">Login</h2>
-    <input type="text" id="userIn" placeholder="Username">
+    <h2>ColoringPixels</h2>
+    <div class="auth-tab">
+      <button id="tabLogin" class="active" onclick="showTab('login')">Login</button>
+      <button id="tabSignup" onclick="showTab('signup')">Create Account</button>
+    </div>
+    <input type="email" id="emailIn" placeholder="Email">
     <input type="password" id="passIn" placeholder="Password">
-    <input type="text" id="lobbyIn" placeholder="Lobby Name">
-    <button id="loginBtn">Login & Connect</button>
-    <button id="signUpBtn" style="background:#444; font-size: 12px;">Create Account</button>
+    <input type="text" id="lobbyIn" placeholder="Lobby Name (optional)">
+    <div id="authError"></div>
+    <button id="authBtn">Login</button>
   </div>
 </div>
 <div id="mainApp">
@@ -53,7 +63,7 @@
     <div>User: <span id="accountName">...</span></div>
     <div id="lobbyLabel">Lobby: ...</div>
     <div id="status" style="color:#dbeafe">Peers: 0</div>
-    <button onclick="location.reload()" style="width:auto; padding:5px 10px; font-size:11px">Exit</button>
+    <button onclick="logout()" style="width:auto; padding:5px 10px; font-size:11px">Exit</button>
   </div>
   <div id="layout">
     <div id="canvasWrap"><canvas id="canvas" tabindex="0"></canvas></div>
@@ -87,50 +97,71 @@
   <button id="exitSaveMenuBtn" class="tool" style="background:#666; margin-top:10px;">Close Menu</button>
 </div>
 <script>
-  /* FIX: Old versions worked because they avoided triggering "Tracking Blockers" */
-  /* This setup uses memory-only mode to bypass Edge/Firefox's strict storage blocks */
-  const gun = Gun({
-    peers: [
-      'https://gunjs.herokuapp.com/gun',
-      'https://gun-manhattan.herokuapp.com/gun',
-      'https://peer.wall.org/gun'
-    ],
-    localStorage: false, // Bypasses the tracking prevention block
-    indexedDB: false     // Prevents the browser from killing the connection early
-  });
+  const SUPABASE_URL = 'https://wkjxmmjcdknjwvvbmnkp.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_t4lLSlKfleiGVWtN7chPxA_QD2anmwU';
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-  const user = gun.user().recall({storage: true});
-  let peer, myID, lobbyID, userName, connections = {}; 
+  let currentUser = null;
+  let peer, lobbyID, connections = {};
   let GRID_SIZE = 64;
   let grid = Array.from({length:GRID_SIZE},()=>Array(GRID_SIZE).fill('#FFFFFF'));
   let history = [], redoStack = [], tool = 'brush', currentColor = '#000000', isDown = false;
   let isHost = false, lastX = null, lastY = null;
   const canvas = document.getElementById('canvas'), ctx = canvas.getContext('2d');
 
-  document.getElementById('signUpBtn').onclick = () => {
-    const u = document.getElementById('userIn').value, p = document.getElementById('passIn').value;
-    if(!u || !p) return alert("Credentials required");
-    user.create(u, p, (ack) => { if(ack.err) alert(ack.err); else alert("Account Created!"); });
-  };
-  document.getElementById('loginBtn').onclick = () => {
-    const u = document.getElementById('userIn').value, p = document.getElementById('passIn').value;
+  let authMode = 'login';
+  function showTab(mode) {
+    authMode = mode;
+    document.getElementById('tabLogin').classList.toggle('active', mode === 'login');
+    document.getElementById('tabSignup').classList.toggle('active', mode === 'signup');
+    document.getElementById('authBtn').textContent = mode === 'login' ? 'Login' : 'Create Account';
+    document.getElementById('authError').style.display = 'none';
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('authError');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  document.getElementById('authBtn').onclick = async () => {
+    const email = document.getElementById('emailIn').value.trim();
+    const pass = document.getElementById('passIn').value;
     lobbyID = (document.getElementById('lobbyIn').value || 'GLOBAL').trim().toUpperCase();
-    if(!u || !p) return alert("Password required.");
-    user.auth(u, p, (ack) => {
-      if(ack.err) return alert("Auth failed. Ensure site is NOT in Private Mode.");
-      userName = u;
-      document.getElementById('authOverlay').style.display = 'none';
-      document.getElementById('mainApp').style.display = 'flex';
-      document.getElementById('accountName').innerText = u;
-      document.getElementById('lobbyLabel').innerText = "Lobby: " + lobbyID;
-      initMultiplayer();
-    });
+    if (!email || !pass) return showError('Email and password required.');
+    document.getElementById('authBtn').textContent = '...';
+    if (authMode === 'signup') {
+      const { error } = await sb.auth.signUp({ email, password: pass });
+      if (error) { showError(error.message); showTab('signup'); return; }
+      showError('Check your email to confirm your account, then log in.');
+      showTab('login');
+    } else {
+      const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+      if (error) { showError(error.message); showTab('login'); return; }
+      currentUser = data.user;
+      startApp(email);
+    }
   };
-  function initMultiplayer() {
-    const masterID = "CP_HOST_" + lobbyID;
-    myID = "CP_PEER_" + lobbyID + "_" + userName + "_" + Math.floor(Math.random()*999);
-    peer = new Peer(myID, { config: {'iceServers': [{ url: 'stun:stun.l.google.com:19302' }]} });
-    const masterPeer = new Peer(masterID, { config: {'iceServers': [{ url: 'stun:stun.l.google.com:19302' }]} });
+
+  async function logout() {
+    await sb.auth.signOut();
+    location.reload();
+  }
+
+  function startApp(email) {
+    document.getElementById('authOverlay').style.display = 'none';
+    document.getElementById('mainApp').style.display = 'flex';
+    document.getElementById('accountName').innerText = email;
+    document.getElementById('lobbyLabel').innerText = 'Lobby: ' + lobbyID;
+    initMultiplayer(email);
+  }
+
+  function initMultiplayer(email) {
+    const safeEmail = email.replace(/[^a-zA-Z0-9]/g, '_');
+    const masterID = 'CP_HOST_' + lobbyID;
+    const myID = 'CP_PEER_' + lobbyID + '_' + safeEmail + '_' + Math.floor(Math.random()*999);
+    peer = new Peer(myID, { config: { iceServers: [{ url: 'stun:stun.l.google.com:19302' }] } });
+    const masterPeer = new Peer(masterID, { config: { iceServers: [{ url: 'stun:stun.l.google.com:19302' }] } });
     masterPeer.on('open', () => { isHost = true; });
     masterPeer.on('connection', setupConnection);
     peer.on('connection', setupConnection);
@@ -139,157 +170,173 @@
     autoFit(); render();
     window.addEventListener('resize', autoFit);
   }
+
   function setupConnection(conn) {
-    if(!conn) return;
+    if (!conn) return;
     conn.on('open', () => {
-      if(!connections[conn.peer]) {
+      if (!connections[conn.peer]) {
         connections[conn.peer] = conn;
-        if(isHost) broadcastCount();
+        if (isHost) broadcastCount();
         updatePeerCountUI();
-        if(!isHost && conn.peer.includes("HOST")) conn.send({type:'sync_req'});
+        if (!isHost && conn.peer.includes('HOST')) conn.send({type:'sync_req'});
       }
     });
     conn.on('data', (data) => {
-      if(data.type === 'px') {
+      if (data.type === 'px') {
         grid[data.y][data.x] = data.c; drawPx(data.x, data.y, data.c);
-        if(isHost) broadcastExcept(data, conn.peer);
-      } else if(data.type === 'full') {
-        GRID_SIZE = data.size || 64; 
-        grid = data.grid;
+        if (isHost) broadcastExcept(data, conn.peer);
+      } else if (data.type === 'full') {
+        GRID_SIZE = data.size || 64; grid = data.grid;
         canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
         document.getElementById('sizeRange').value = GRID_SIZE;
         document.getElementById('sizeLabel').innerText = GRID_SIZE + ' x ' + GRID_SIZE;
         render(); autoFit();
-      } else if(data.type === 'sync_req' && isHost) {
-        conn.send({type:'full', grid: grid, size: GRID_SIZE});
-      } else if(data.type === 'wipe') {
+      } else if (data.type === 'sync_req' && isHost) {
+        conn.send({type:'full', grid, size: GRID_SIZE});
+      } else if (data.type === 'wipe') {
         grid = Array.from({length:GRID_SIZE},()=>Array(GRID_SIZE).fill('#FFFFFF'));
-        render(); if(isHost) broadcastExcept(data, conn.peer);
-      } else if(data.type === 'count_update') updatePeerCountUI(data.count);
+        render(); if (isHost) broadcastExcept(data, conn.peer);
+      } else if (data.type === 'count_update') updatePeerCountUI(data.count);
     });
-    conn.on('close', () => { delete connections[conn.peer]; if(isHost) broadcastCount(); updatePeerCountUI(); });
+    conn.on('close', () => { delete connections[conn.peer]; if (isHost) broadcastCount(); updatePeerCountUI(); });
   }
-  function broadcastCount() { broadcast({type: 'count_update', count: Object.keys(connections).length}); }
+
+  function broadcastCount() { broadcast({type:'count_update', count: Object.keys(connections).length}); }
   function updatePeerCountUI(ov) {
     const c = (ov !== undefined) ? ov : Object.keys(connections).length;
-    document.getElementById('status').innerText = "Peers: " + c;
+    document.getElementById('status').innerText = 'Peers: ' + c;
   }
+
   document.getElementById('sizeRange').onchange = (e) => {
-    if(!confirm("Resizing the grid will wipe the current canvas. Continue?")) { e.target.value = GRID_SIZE; return; }
+    if (!confirm('Resizing the grid will wipe the current canvas. Continue?')) { e.target.value = GRID_SIZE; return; }
     GRID_SIZE = parseInt(e.target.value);
     document.getElementById('sizeLabel').innerText = GRID_SIZE + ' x ' + GRID_SIZE;
     grid = Array.from({length:GRID_SIZE},()=>Array(GRID_SIZE).fill('#FFFFFF'));
     canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
     render(); autoFit();
-    broadcast({type: 'full', grid: grid, size: GRID_SIZE});
+    broadcast({type:'full', grid, size: GRID_SIZE});
   };
+
   function setPx(x,y,c) {
-    if(x<0||x>=GRID_SIZE||y<0||y>=GRID_SIZE||grid[y][x]===c) return;
+    if (x<0||x>=GRID_SIZE||y<0||y>=GRID_SIZE||grid[y][x]===c) return;
     grid[y][x]=c; drawPx(x,y,c);
     broadcast({type:'px', x, y, c});
   }
-  function drawLine(x0, y0, x1, y1, c) {
-    const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
-    const sx = (x0 < x1) ? 1 : -1, sy = (y0 < y1) ? 1 : -1;
-    let err = dx - dy;
-    while (true) {
-      setPx(x0, y0, c); if (x0 === x1 && y0 === y1) break;
-      const e2 = 2 * err; if (e2 > -dy) { err -= dy; x0 += sx; } if (e2 < dx) { err += dx; y0 += sy; }
+  function drawLine(x0,y0,x1,y1,c) {
+    const dx=Math.abs(x1-x0), dy=Math.abs(y1-y0);
+    const sx=(x0<x1)?1:-1, sy=(y0<y1)?1:-1;
+    let err=dx-dy;
+    while(true) {
+      setPx(x0,y0,c); if(x0===x1&&y0===y1) break;
+      const e2=2*err; if(e2>-dy){err-=dy;x0+=sx;} if(e2<dx){err+=dx;y0+=sy;}
     }
   }
   function paint(e) {
-    if(!isDown) return;
+    if (!isDown) return;
     const rect = canvas.getBoundingClientRect();
     const cx = e.touches ? e.touches[0].clientX : e.clientX;
     const cy = e.touches ? e.touches[0].clientY : e.clientY;
     const x = Math.floor((cx - rect.left) / (rect.width / GRID_SIZE));
     const y = Math.floor((cy - rect.top) / (rect.height / GRID_SIZE));
-    if(x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) return;
-    if(tool === 'fill') { floodFill(x,y,grid[y][x],currentColor); isDown=false; }
+    if (x<0||x>=GRID_SIZE||y<0||y>=GRID_SIZE) return;
+    if (tool === 'fill') { floodFill(x,y,grid[y][x],currentColor); isDown=false; }
     else {
       const c = (tool==='brush'?currentColor:'#FFFFFF');
-      if(lastX !== null) drawLine(lastX, lastY, x, y, c); else setPx(x, y, c);
-      lastX = x; lastY = y;
+      if (lastX !== null) drawLine(lastX,lastY,x,y,c); else setPx(x,y,c);
+      lastX=x; lastY=y;
     }
   }
-  function floodFill(x,y,t,r){
-    if(t===r)return;
+  function floodFill(x,y,t,r) {
+    if (t===r) return;
     const s=[[x,y]];
-    while(s.length){
+    while(s.length) {
       const [cx,cy]=s.pop();
-      if(cx<0||cy<0||cx>=GRID_SIZE||cy>=GRID_SIZE||grid[cy][cx]!==t)continue;
+      if(cx<0||cy<0||cx>=GRID_SIZE||cy>=GRID_SIZE||grid[cy][cx]!==t) continue;
       setPx(cx,cy,r); s.push([cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]);
     }
   }
   function broadcast(m) { for(let id in connections) if(connections[id].open) connections[id].send(m); }
-  function broadcastExcept(m, s) { for(let id in connections) if(id !== s && connections[id].open) connections[id].send(m); }
-  function drawPx(x,y,c){ ctx.fillStyle=c; ctx.fillRect(x,y,1,1); }
-  function render(){ ctx.clearRect(0, 0, canvas.width, canvas.height); for(let y=0;y<GRID_SIZE;y++)for(let x=0;x<GRID_SIZE;x++)drawPx(x,y,grid[y][x]); }
+  function broadcastExcept(m,s) { for(let id in connections) if(id!==s&&connections[id].open) connections[id].send(m); }
+  function drawPx(x,y,c) { ctx.fillStyle=c; ctx.fillRect(x,y,1,1); }
+  function render() { ctx.clearRect(0,0,canvas.width,canvas.height); for(let y=0;y<GRID_SIZE;y++) for(let x=0;x<GRID_SIZE;x++) drawPx(x,y,grid[y][x]); }
   function autoFit() {
     const wrap = document.getElementById('canvasWrap').getBoundingClientRect();
-    const s = Math.min(wrap.width * 0.96, wrap.height * 0.96);
-    canvas.style.width = s + 'px'; canvas.style.height = s + 'px';
+    const s = Math.min(wrap.width*0.96, wrap.height*0.96);
+    canvas.style.width=s+'px'; canvas.style.height=s+'px';
   }
+
   document.getElementById('brushBtn').onclick = () => { tool='brush'; document.querySelectorAll('.tool').forEach(b=>b.classList.remove('active')); document.getElementById('brushBtn').classList.add('active'); };
   document.getElementById('eraserBtn').onclick = () => { tool='eraser'; document.querySelectorAll('.tool').forEach(b=>b.classList.remove('active')); document.getElementById('eraserBtn').classList.add('active'); };
   document.getElementById('fillBtn').onclick = () => { tool='fill'; document.querySelectorAll('.tool').forEach(b=>b.classList.remove('active')); document.getElementById('fillBtn').classList.add('active'); };
-  document.getElementById('undoBtn').onclick = () => { if(history.length){ redoStack.push(JSON.stringify(grid)); grid=JSON.parse(history.pop()); render(); broadcast({type:'full', grid, size:GRID_SIZE}); } };
-  document.getElementById('redoBtn').onclick = () => { if(redoStack.length){ history.push(JSON.stringify(grid)); grid=JSON.parse(redoStack.pop()); render(); broadcast({type:'full', grid, size:GRID_SIZE}); } };
-  document.getElementById('wipeBtn').onclick = () => { if(confirm("Wipe all?")){ grid=Array.from({length:GRID_SIZE},()=>Array(GRID_SIZE).fill('#FFFFFF')); render(); broadcast({type:'wipe'}); } };
+  document.getElementById('undoBtn').onclick = () => { if(history.length){ redoStack.push(JSON.stringify(grid)); grid=JSON.parse(history.pop()); render(); broadcast({type:'full',grid,size:GRID_SIZE}); } };
+  document.getElementById('redoBtn').onclick = () => { if(redoStack.length){ history.push(JSON.stringify(grid)); grid=JSON.parse(redoStack.pop()); render(); broadcast({type:'full',grid,size:GRID_SIZE}); } };
+  document.getElementById('wipeBtn').onclick = () => { if(confirm('Wipe all?')){ grid=Array.from({length:GRID_SIZE},()=>Array(GRID_SIZE).fill('#FFFFFF')); render(); broadcast({type:'wipe'}); } };
   document.getElementById('exportBtn').onclick = () => { const a=document.createElement('a'); a.download='art.png'; a.href=canvas.toDataURL(); a.click(); };
   document.getElementById('picker').oninput = (e) => { currentColor=e.target.value; document.getElementById('hexInput').value=currentColor; };
 
-  document.getElementById('openSaveMenuBtn').onclick = () => { document.getElementById('saveMenu').style.display='block'; refreshCloudList(); };
+  document.getElementById('openSaveMenuBtn').onclick = () => { document.getElementById('saveMenu').style.display='block'; refreshSaveList(); };
   document.getElementById('exitSaveMenuBtn').onclick = () => document.getElementById('saveMenu').style.display='none';
-  document.getElementById('menuSaveBtn').onclick = () => {
-    const name = document.getElementById('menuSaveName').value.trim() || "My Drawing";
-    user.get('cloud_saves').get(name).put(JSON.stringify({grid, size: GRID_SIZE}));
-    alert("Saved Successfully!");
-    document.getElementById('menuSaveName').value = "";
-    refreshCloudList();
+
+  document.getElementById('menuSaveBtn').onclick = async () => {
+    const name = document.getElementById('menuSaveName').value.trim() || 'My Drawing';
+    const { error } = await sb.from('saves').upsert({ user_id: currentUser.id, name, data: { grid, size: GRID_SIZE } }, { onConflict: 'user_id,name' });
+    if (error) return alert('Save failed: ' + error.message);
+    alert('Saved!');
+    document.getElementById('menuSaveName').value = '';
+    refreshSaveList();
   };
-  function refreshCloudList() {
+
+  async function refreshSaveList() {
     const list = document.getElementById('slotList');
-    list.innerHTML = ""; 
-    const seen = new Set(); 
-    user.get('cloud_saves').map().once((d, n) => { 
-        if (d && !seen.has(n)) { 
-            const sid = "slot-" + n.replace(/[^a-z0-9]/gi, '_');
-            if (document.getElementById(sid)) return;
-            seen.add(n); 
-            const div = document.createElement('div');
-            div.className = 'save-slot'; div.id = sid;
-            div.innerHTML = `<strong>${n}</strong><div>
-                <button class="load-btn" onclick="loadCloud('${n}')">Load</button>
-                <button class="del-btn" onclick="delCloud('${n}')">Delete</button>
-            </div>`;
-            list.appendChild(div);
-        } 
-    }); 
+    list.innerHTML = '<i style="color:#999; padding:10px; display:block;">Loading...</i>';
+    const { data, error } = await sb.from('saves').select('name').eq('user_id', currentUser.id).order('name');
+    if (error) { list.innerHTML = '<i style="color:red">Failed to load saves.</i>'; return; }
+    if (!data.length) { list.innerHTML = '<i style="color:#999; padding:10px; display:block;">No saves yet.</i>'; return; }
+    list.innerHTML = '';
+    data.forEach(row => {
+      const div = document.createElement('div');
+      div.className = 'save-slot';
+      div.innerHTML = `<strong>${row.name}</strong><div>
+        <button class="load-btn" onclick="loadSave('${row.name}')">Load</button>
+        <button class="del-btn" onclick="deleteSave('${row.name}')">Delete</button>
+      </div>`;
+      list.appendChild(div);
+    });
   }
-  window.loadCloud = (n) => { 
-    user.get('cloud_saves').get(n).once((d)=>{ 
-      if(!d) return;
-      const p=JSON.parse(d); grid=p.grid; GRID_SIZE=p.size; 
-      canvas.width=GRID_SIZE; canvas.height=GRID_SIZE; 
-      render(); autoFit(); broadcast({type:'full',grid,size:GRID_SIZE}); 
-      document.getElementById('saveMenu').style.display='none'; 
-    }); 
+
+  window.loadSave = async (name) => {
+    const { data, error } = await sb.from('saves').select('data').eq('user_id', currentUser.id).eq('name', name).single();
+    if (error || !data) return alert('Failed to load.');
+    grid = data.data.grid; GRID_SIZE = data.data.size;
+    canvas.width=GRID_SIZE; canvas.height=GRID_SIZE;
+    render(); autoFit(); broadcast({type:'full',grid,size:GRID_SIZE});
+    document.getElementById('saveMenu').style.display='none';
   };
-  window.delCloud = (n) => {
-    if(!confirm(`Delete "${n}"?`)) return;
-    user.get('cloud_saves').get(n).put(null); 
-    const el = document.getElementById("slot-" + n.replace(/[^a-z0-9]/gi, '_'));
-    if(el) el.remove(); 
+
+  window.deleteSave = async (name) => {
+    if (!confirm(`Delete "${name}"?`)) return;
+    await sb.from('saves').delete().eq('user_id', currentUser.id).eq('name', name);
+    refreshSaveList();
   };
+
   const colors=["#D20103","#FF0000","#FF8484","#EC8E01","#FFA500","#FFDC9A","#E2C44B","#FFFF00","#FFFFAE","#226308","#008000","#00FF00","#2227C3","#0000DD","#ADD8E6","#621079","#800080","#CC6CE7","#DCADB6","#FFC0CB","#FFF0F3","#A07D45","#C8A165","#EFD9B8","#FFFFFF","#D3D3D3","#808080","#5F5E5E","#000000"];
   colors.forEach(c => { const s=document.createElement('div'); s.className='swatch'; s.style.background=c; s.onclick=()=>{ currentColor=c; document.getElementById('picker').value=c; document.getElementById('hexInput').value=c; }; document.getElementById('palette').appendChild(s); });
+
   canvas.onmousedown = (e) => { history.push(JSON.stringify(grid)); isDown=true; paint(e); };
   canvas.ontouchstart = (e) => { e.preventDefault(); history.push(JSON.stringify(grid)); isDown=true; paint(e); };
   window.onmouseup = () => { isDown=false; lastX=lastY=null; };
   window.ontouchend = () => { isDown=false; lastX=lastY=null; };
   canvas.onmousemove = paint;
   canvas.ontouchmove = (e) => { e.preventDefault(); paint(e); };
+
+  // Restore session on page load
+  sb.auth.getSession().then(({ data }) => {
+    if (data.session) {
+      currentUser = data.session.user;
+      lobbyID = 'GLOBAL';
+      startApp(currentUser.email);
+    }
+  });
 </script>
 </body>
 </html>
