@@ -247,8 +247,7 @@
     });
     conn.on('data', data => {
       if (data.type === 'batch') {
-        data.pixels.forEach(p => { grid[p.y][p.x] = p.c; });
-        render();
+        data.pixels.forEach(p => { grid[p.y][p.x] = p.c; drawPx(p.x, p.y, p.c); });
         if (isHost) broadcastExcept(data, conn.peer);
       } else if (data.type === 'full') {
         GRID_SIZE = data.size || 64; grid = data.grid;
@@ -259,11 +258,12 @@
       } else if (data.type === 'sync_req' && isHost) {
         conn.send({type:'full', grid, size: GRID_SIZE});
       } else if (data.type === 'wipe') {
-        // FIX: use size from message so all peers stay in sync
         GRID_SIZE = data.size || GRID_SIZE;
         grid = Array.from({length:GRID_SIZE},()=>Array(GRID_SIZE).fill('#FFFFFF'));
         canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
-        render(); autoFit();
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        autoFit();
         if (isHost) broadcastExcept(data, conn.peer);
       } else if (data.type === 'count_update') updatePeerCountUI(data.count);
     });
@@ -345,6 +345,7 @@
     const pixels = [];
     const visited = new Set();
     const s = [[x, y]];
+    ctx.fillStyle = r;
     while (s.length) {
       const [cx, cy] = s.pop();
       if (cx < 0 || cy < 0 || cx >= GRID_SIZE || cy >= GRID_SIZE) continue;
@@ -352,10 +353,11 @@
       if (visited.has(key) || grid[cy][cx] !== t) continue;
       visited.add(key);
       grid[cy][cx] = r;
+      ctx.fillRect(cx, cy, 1, 1);
       pixels.push({ x: cx, y: cy, c: r });
       s.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
     }
-    if (pixels.length) { render(); broadcast({ type: 'batch', pixels }); }
+    if (pixels.length) broadcast({ type: 'batch', pixels });
   }
 
   function broadcast(m) { for(let id in connections) if(connections[id].open) connections[id].send(m); }
@@ -379,7 +381,8 @@
       history.push(JSON.stringify(grid));
       redoStack = [];
       grid = Array.from({length:GRID_SIZE},()=>Array(GRID_SIZE).fill('#FFFFFF'));
-      render();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
       broadcast({type:'wipe', size: GRID_SIZE});
     }
   };
