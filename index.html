@@ -219,9 +219,21 @@
     });
   }
 
-  function broadcastCount() { broadcast({type:'count_update', count: Object.keys(connections).length}); }
+  function countUsers() {
+    // Each user has 2 peer IDs (host attempt + client), deduplicate by extracting the username segment
+    const seen = new Set();
+    for (let id in connections) {
+      // IDs look like CP_HOST_LOBBY or CP_PEER_LOBBY_username_123
+      const parts = id.split('_');
+      // Use a stable key: for HOST it's the lobby, for PEER it's username+lobby
+      const key = id.startsWith('CP_HOST_') ? id : parts.slice(0, parts.length - 1).join('_');
+      seen.add(key);
+    }
+    return seen.size;
+  }
+  function broadcastCount() { broadcast({type:'count_update', count: countUsers()}); }
   function updatePeerCountUI(ov) {
-    const c = (ov !== undefined) ? ov : Object.keys(connections).length;
+    const c = (ov !== undefined) ? ov : countUsers();
     document.getElementById('status').innerText = 'Peers: ' + c;
   }
 
