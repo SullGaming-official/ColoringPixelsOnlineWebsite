@@ -187,15 +187,15 @@
     myPeerID = 'CP_PEER_' + lobbyID + '_' + safeEmail + '_' + Math.floor(Math.random()*999);
     const peerCfg = { config: { iceServers: [{ url: 'stun:stun.l.google.com:19302' }] } };
 
-    // Try to claim host slot
+    // Try to become host
     const masterPeer = new Peer(masterID, peerCfg);
     masterPeer.on('open', () => { isHost = true; });
-    masterPeer.on('connection', (conn) => setupConnection(conn));
+    masterPeer.on('connection', conn => setupConnection(conn));
     masterPeer.on('error', () => {});
 
-    // Open our peer
+    // Open client peer
     peer = new Peer(myPeerID, peerCfg);
-    peer.on('connection', (conn) => setupConnection(conn));
+    peer.on('connection', conn => setupConnection(conn));
     peer.on('open', () => {
       const conn = peer.connect(masterID);
       if (conn) setupConnection(conn);
@@ -206,12 +206,6 @@
     window.addEventListener('resize', autoFit);
   }
 
-  function connectToPeer(id) {
-    if (!id || id === myPeerID || connections[id]) return;
-    const conn = peer.connect(id);
-    if (conn) setupConnection(conn);
-  }
-
   function setupConnection(conn) {
     if (!conn) return;
     conn.on('open', () => {
@@ -219,41 +213,32 @@
       connections[conn.peer] = conn;
       updatePeerCountUI();
       if (isHost) {
-        // Send canvas + full peer list so new joiner can mesh with everyone
-        const peerList = Object.keys(connections).filter(id => !id.includes('HOST') && id !== conn.peer);
-        conn.send({type:'full', grid, size: GRID_SIZE, peers: peerList});
-        // Tell all existing peers about the new peer
-        broadcastExcept({type:'new_peer', id: conn.peer}, conn.peer);
+        conn.send({type:'full', grid, size: GRID_SIZE});
         broadcastCount();
       } else if (conn.peer.includes('HOST')) {
         conn.send({type:'sync_req'});
       }
     });
-    conn.on('data', (data) => {
+    conn.on('data', data => {
       if (data.type === 'batch') {
         data.pixels.forEach(p => { grid[p.y][p.x] = p.c; drawPx(p.x, p.y, p.c); });
-        // Relay to peers we know about that didn't send this (mesh)
-        broadcastExcept(data, conn.peer);
+        if (isHost) broadcastExcept(data, conn.peer);
       } else if (data.type === 'full') {
         GRID_SIZE = data.size || 64; grid = data.grid;
         canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
         document.getElementById('sizeRange').value = GRID_SIZE;
         document.getElementById('sizeLabel').innerText = GRID_SIZE + ' x ' + GRID_SIZE;
         render(); autoFit();
-        // Connect directly to all peers in the list
-        if (data.peers) data.peers.forEach(id => connectToPeer(id));
       } else if (data.type === 'sync_req' && isHost) {
-        const peerList = Object.keys(connections).filter(id => !id.includes('HOST') && id !== conn.peer);
-        conn.send({type:'full', grid, size: GRID_SIZE, peers: peerList});
-      } else if (data.type === 'new_peer') {
-        connectToPeer(data.id);
+        conn.send({type:'full', grid, size: GRID_SIZE});
       } else if (data.type === 'wipe') {
         grid = Array.from({length:GRID_SIZE},()=>Array(GRID_SIZE).fill('#FFFFFF'));
-        render(); broadcastExcept(data, conn.peer);
+        render(); if (isHost) broadcastExcept(data, conn.peer);
       } else if (data.type === 'count_update') updatePeerCountUI(data.count);
     });
     conn.on('close', () => {
       delete connections[conn.peer];
+      if (isHost) broadcastCount();
       updatePeerCountUI();
     });
   }
@@ -262,7 +247,7 @@
     const seen = new Set();
     for (let id in connections) {
       if (id.startsWith('CP_HOST_')) continue;
-      const key = id.replace(/_\d+$/, '');
+      const key = id.replace(/_[0-9]+$/, '');
       seen.add(key);
     }
     return seen.size;
