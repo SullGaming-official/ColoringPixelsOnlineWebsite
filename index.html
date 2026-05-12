@@ -247,32 +247,15 @@
     });
     conn.on('data', data => {
       if (data.type === 'batch') {
-        data.pixels.forEach(p => { grid[p.y][p.x] = p.c; drawPx(p.x, p.y, p.c); });
+        data.pixels.forEach(p => { grid[p.y][p.x] = p.c; });
+        renderPixels(data.pixels);
         if (isHost) broadcastExcept(data, conn.peer);
       } else if (data.type === 'full') {
-        const newSize = data.size || 64;
-        GRID_SIZE = newSize; grid = data.grid;
-        if (canvas.width !== GRID_SIZE || canvas.height !== GRID_SIZE) {
-          canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
-          autoFit();
-        }
-        document.getElementById('sizeRange').value = GRID_SIZE;
-        document.getElementById('sizeLabel').innerText = GRID_SIZE + ' x ' + GRID_SIZE;
-        render();
+        applyFullState(data.grid, data.size || 64);
       } else if (data.type === 'sync_req' && isHost) {
         conn.send({type:'full', grid, size: GRID_SIZE});
       } else if (data.type === 'wipe') {
-        const newSize = data.size || GRID_SIZE;
-        grid = Array.from({length:newSize},()=>Array(newSize).fill('#FFFFFF'));
-        if (canvas.width !== newSize || canvas.height !== newSize) {
-          GRID_SIZE = newSize;
-          canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
-          autoFit();
-        } else {
-          GRID_SIZE = newSize;
-        }
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        applyWipe(data.size || GRID_SIZE);
         if (isHost) broadcastExcept(data, conn.peer);
       } else if (data.type === 'count_update') updatePeerCountUI(data.count);
     });
@@ -282,6 +265,31 @@
       updatePeerCountUI();
     });
   }
+
+  // ── Atomic state helpers ─────────────────────────────────────────────────
+
+  function applyFullState(newGrid, newSize) {
+    GRID_SIZE = newSize;
+    grid = newGrid;
+    canvas.width = GRID_SIZE;
+    canvas.height = GRID_SIZE;
+    document.getElementById('sizeRange').value = GRID_SIZE;
+    document.getElementById('sizeLabel').innerText = GRID_SIZE + ' x ' + GRID_SIZE;
+    autoFit();
+    render();
+  }
+
+  // Wipe: build a fresh white grid atomically, then render once.
+  function applyWipe(newSize) {
+    GRID_SIZE = newSize;
+    grid = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill('#FFFFFF'));
+    canvas.width = GRID_SIZE;
+    canvas.height = GRID_SIZE;
+    autoFit();
+    render();
+  }
+
+  // ── Peer count ───────────────────────────────────────────────────────────
 
   function countUsers() {
     const seen = new Set();
@@ -300,39 +308,43 @@
 
   document.getElementById('sizeRange').onchange = (e) => {
     if (!confirm('Resizing the grid will wipe the current canvas. Continue?')) { e.target.value = GRID_SIZE; return; }
-    GRID_SIZE = parseInt(e.target.value);
-    document.getElementById('sizeLabel').innerText = GRID_SIZE + ' x ' + GRID_SIZE;
-    grid = Array.from({length:GRID_SIZE},()=>Array(GRID_SIZE).fill('#FFFFFF'));
-    canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
-    render(); autoFit();
+    const newSize = parseInt(e.target.value);
+    document.getElementById('sizeLabel').innerText = newSize + ' x ' + newSize;
+    applyWipe(newSize);
     broadcast({type:'full', grid, size: GRID_SIZE});
   };
 
+  // ── Pixel batching ───────────────────────────────────────────────────────
+
   let pixelBatch = [];
   let batchTimer = null;
-  function setPx(x,y,c) {
-    if (x<0||x>=GRID_SIZE||y<0||y>=GRID_SIZE||grid[y][x]===c) return;
-    grid[y][x]=c; drawPx(x,y,c);
-    pixelBatch.push({x,y,c});
+  function setPx(x, y, c) {
+    if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE || grid[y][x] === c) return;
+    grid[y][x] = c;
+    drawPx(x, y, c);
+    pixelBatch.push({x, y, c});
     if (!batchTimer) {
       batchTimer = setTimeout(() => {
-        if (pixelBatch.length) {
-          const msg = {type:'batch', pixels: pixelBatch};
-          broadcast(msg);
-        }
-        pixelBatch = []; batchTimer = null;
+        if (pixelBatch.length) broadcast({type:'batch', pixels: pixelBatch});
+        pixelBatch = [];
+        batchTimer = null;
       }, 0);
     }
   }
-  function drawLine(x0,y0,x1,y1,c) {
-    const dx=Math.abs(x1-x0), dy=Math.abs(y1-y0);
-    const sx=(x0<x1)?1:-1, sy=(y0<y1)?1:-1;
-    let err=dx-dy;
-    while(true) {
-      setPx(x0,y0,c); if(x0===x1&&y0===y1) break;
-      const e2=2*err; if(e2>-dy){err-=dy;x0+=sx;} if(e2<dx){err+=dx;y0+=sy;}
+
+  function drawLine(x0, y0, x1, y1, c) {
+    const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+    const sx = (x0 < x1) ? 1 : -1, sy = (y0 < y1) ? 1 : -1;
+    let err = dx - dy;
+    while (true) {
+      setPx(x0, y0, c);
+      if (x0 === x1 && y0 === y1) break;
+      const e2 = 2 * err;
+      if (e2 > -dy) { err -= dy; x0 += sx; }
+      if (e2 < dx)  { err += dx; y0 += sy; }
     }
   }
+
   function paint(e) {
     if (!isDown) return;
     const rect = canvas.getBoundingClientRect();
@@ -340,67 +352,150 @@
     const cy = e.touches ? e.touches[0].clientY : e.clientY;
     const x = Math.floor((cx - rect.left) / (rect.width / GRID_SIZE));
     const y = Math.floor((cy - rect.top) / (rect.height / GRID_SIZE));
-    if (x<0||x>=GRID_SIZE||y<0||y>=GRID_SIZE) return;
-    if (tool === 'fill') { floodFill(x,y,grid[y][x],currentColor); isDown=false; }
-    else {
-      const c = (tool==='brush'?currentColor:'#FFFFFF');
-      if (lastX !== null) drawLine(lastX,lastY,x,y,c); else setPx(x,y,c);
-      lastX=x; lastY=y;
+    if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) return;
+    if (tool === 'fill') {
+      floodFill(x, y, grid[y][x], currentColor);
+      isDown = false;
+    } else {
+      const c = (tool === 'brush' ? currentColor : '#FFFFFF');
+      if (lastX !== null) drawLine(lastX, lastY, x, y, c); else setPx(x, y, c);
+      lastX = x; lastY = y;
     }
   }
 
-  function floodFill(x, y, t, r) {
-    if (t === r) return;
+  // ── FIXED: Flood fill ────────────────────────────────────────────────────
+  // All grid writes happen first; one render call at the end.
+  // No incremental ctx.fillRect during traversal = no partial/glitchy paints.
+  function floodFill(x, y, targetColor, fillColor) {
+    if (targetColor === fillColor) return;
+
     const pixels = [];
-    const visited = new Set();
-    const s = [[x, y]];
-    ctx.fillStyle = r;
-    while (s.length) {
-      const [cx, cy] = s.pop();
-      if (cx < 0 || cy < 0 || cx >= GRID_SIZE || cy >= GRID_SIZE) continue;
-      const key = cy * GRID_SIZE + cx;
-      if (visited.has(key) || grid[cy][cx] !== t) continue;
-      visited.add(key);
-      grid[cy][cx] = r;
-      ctx.fillRect(cx, cy, 1, 1);
-      pixels.push({ x: cx, y: cy, c: r });
-      s.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
+    const visited = new Uint8Array(GRID_SIZE * GRID_SIZE); // fast bit array
+    const stack = [y * GRID_SIZE + x];
+    visited[y * GRID_SIZE + x] = 1;
+
+    while (stack.length) {
+      const idx = stack.pop();
+      const cy = (idx / GRID_SIZE) | 0;
+      const cx = idx % GRID_SIZE;
+      if (grid[cy][cx] !== targetColor) continue;
+
+      // Write to grid data structure only — no canvas ops yet
+      grid[cy][cx] = fillColor;
+      pixels.push({x: cx, y: cy, c: fillColor});
+
+      const neighbors = [
+        cy > 0            ? (cy - 1) * GRID_SIZE + cx : -1,
+        cy < GRID_SIZE-1  ? (cy + 1) * GRID_SIZE + cx : -1,
+        cx > 0            ?  cy      * GRID_SIZE + cx - 1 : -1,
+        cx < GRID_SIZE-1  ?  cy      * GRID_SIZE + cx + 1 : -1,
+      ];
+      for (let i = 0; i < 4; i++) {
+        const n = neighbors[i];
+        if (n !== -1 && !visited[n]) {
+          visited[n] = 1;
+          stack.push(n);
+        }
+      }
     }
-    if (pixels.length) broadcast({ type: 'batch', pixels });
+
+    if (!pixels.length) return;
+
+    // Single atomic render pass — draw only the changed pixels
+    ctx.fillStyle = fillColor;
+    for (let i = 0; i < pixels.length; i++) {
+      ctx.fillRect(pixels[i].x, pixels[i].y, 1, 1);
+    }
+
+    broadcast({type: 'batch', pixels});
   }
 
-  function broadcast(m) { for(let id in connections) if(connections[id].open) connections[id].send(m); }
-  function broadcastExcept(m,s) { for(let id in connections) if(id!==s&&connections[id].open) connections[id].send(m); }
-  function drawPx(x,y,c) { ctx.fillStyle=c; ctx.fillRect(x,y,1,1); }
-  function render() { ctx.clearRect(0,0,canvas.width,canvas.height); for(let y=0;y<GRID_SIZE;y++) for(let x=0;x<GRID_SIZE;x++) drawPx(x,y,grid[y][x]); }
-  function autoFit() {
-    const wrap = document.getElementById('canvasWrap').getBoundingClientRect();
-    const s = Math.min(wrap.width*0.96, wrap.height*0.96);
-    canvas.style.width=s+'px'; canvas.style.height=s+'px';
-  }
-
-  document.getElementById('brushBtn').onclick = () => { tool='brush'; document.querySelectorAll('.tool').forEach(b=>b.classList.remove('active')); document.getElementById('brushBtn').classList.add('active'); };
-  document.getElementById('eraserBtn').onclick = () => { tool='eraser'; document.querySelectorAll('.tool').forEach(b=>b.classList.remove('active')); document.getElementById('eraserBtn').classList.add('active'); };
-  document.getElementById('fillBtn').onclick = () => { tool='fill'; document.querySelectorAll('.tool').forEach(b=>b.classList.remove('active')); document.getElementById('fillBtn').classList.add('active'); };
-  document.getElementById('undoBtn').onclick = () => { if(history.length){ redoStack.push(JSON.stringify(grid)); grid=JSON.parse(history.pop()); render(); broadcast({type:'full',grid,size:GRID_SIZE}); } };
-  document.getElementById('redoBtn').onclick = () => { if(redoStack.length){ history.push(JSON.stringify(grid)); grid=JSON.parse(redoStack.pop()); render(); broadcast({type:'full',grid,size:GRID_SIZE}); } };
-
+  // ── FIXED: Wipe board ────────────────────────────────────────────────────
+  // Uses applyWipe() for atomic grid+canvas reset, then broadcasts.
   document.getElementById('wipeBtn').onclick = () => {
-    if (confirm('Wipe all?')) {
-      history.push(JSON.stringify(grid));
-      redoStack = [];
-      grid = Array.from({length:GRID_SIZE},()=>Array(GRID_SIZE).fill('#FFFFFF'));
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      broadcast({type:'wipe', size: GRID_SIZE});
-    }
+    if (!confirm('Wipe all?')) return;
+    history.push(JSON.stringify(grid));
+    redoStack = [];
+    applyWipe(GRID_SIZE);
+    broadcast({type: 'wipe', size: GRID_SIZE});
   };
 
-  document.getElementById('exportBtn').onclick = () => { const a=document.createElement('a'); a.download='art.png'; a.href=canvas.toDataURL(); a.click(); };
-  document.getElementById('picker').oninput = (e) => { currentColor=e.target.value; document.getElementById('hexInput').value=currentColor; };
+  // ── Render helpers ───────────────────────────────────────────────────────
 
-  document.getElementById('openSaveMenuBtn').onclick = () => { document.getElementById('saveMenu').style.display='block'; refreshSaveList(); };
-  document.getElementById('exitSaveMenuBtn').onclick = () => document.getElementById('saveMenu').style.display='none';
+  function broadcast(m) { for (let id in connections) if (connections[id].open) connections[id].send(m); }
+  function broadcastExcept(m, s) { for (let id in connections) if (id !== s && connections[id].open) connections[id].send(m); }
+
+  function drawPx(x, y, c) { ctx.fillStyle = c; ctx.fillRect(x, y, 1, 1); }
+
+  // Render a sparse list of pixels (used for incoming batch messages)
+  function renderPixels(pixels) {
+    for (let i = 0; i < pixels.length; i++) {
+      drawPx(pixels[i].x, pixels[i].y, pixels[i].c);
+    }
+  }
+
+  // Full canvas redraw from grid state
+  function render() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (let y = 0; y < GRID_SIZE; y++) {
+      for (let x = 0; x < GRID_SIZE; x++) {
+        drawPx(x, y, grid[y][x]);
+      }
+    }
+  }
+
+  function autoFit() {
+    const wrap = document.getElementById('canvasWrap').getBoundingClientRect();
+    const s = Math.min(wrap.width * 0.96, wrap.height * 0.96);
+    canvas.style.width = s + 'px';
+    canvas.style.height = s + 'px';
+  }
+
+  // ── Tool buttons ─────────────────────────────────────────────────────────
+
+  function setTool(t) {
+    tool = t;
+    document.querySelectorAll('.tool').forEach(b => b.classList.remove('active'));
+    document.getElementById(t === 'brush' ? 'brushBtn' : t === 'eraser' ? 'eraserBtn' : 'fillBtn').classList.add('active');
+  }
+  document.getElementById('brushBtn').onclick  = () => setTool('brush');
+  document.getElementById('eraserBtn').onclick = () => setTool('eraser');
+  document.getElementById('fillBtn').onclick   = () => setTool('fill');
+
+  document.getElementById('undoBtn').onclick = () => {
+    if (!history.length) return;
+    redoStack.push(JSON.stringify(grid));
+    grid = JSON.parse(history.pop());
+    render();
+    broadcast({type:'full', grid, size: GRID_SIZE});
+  };
+  document.getElementById('redoBtn').onclick = () => {
+    if (!redoStack.length) return;
+    history.push(JSON.stringify(grid));
+    grid = JSON.parse(redoStack.pop());
+    render();
+    broadcast({type:'full', grid, size: GRID_SIZE});
+  };
+
+  document.getElementById('exportBtn').onclick = () => {
+    const a = document.createElement('a');
+    a.download = 'art.png';
+    a.href = canvas.toDataURL();
+    a.click();
+  };
+
+  document.getElementById('picker').oninput = (e) => {
+    currentColor = e.target.value;
+    document.getElementById('hexInput').value = currentColor;
+  };
+
+  // ── Save/load menu ───────────────────────────────────────────────────────
+
+  document.getElementById('openSaveMenuBtn').onclick = () => {
+    document.getElementById('saveMenu').style.display = 'block';
+    refreshSaveList();
+  };
+  document.getElementById('exitSaveMenuBtn').onclick = () => document.getElementById('saveMenu').style.display = 'none';
 
   document.getElementById('menuSaveBtn').onclick = async () => {
     const name = document.getElementById('menuSaveName').value.trim() || 'My Drawing';
@@ -432,10 +527,9 @@
   window.loadSave = async (name) => {
     const { data, error } = await sb.from('saves').select('data').eq('user_id', currentUser.id).eq('name', name).single();
     if (error || !data) return alert('Failed to load.');
-    grid = data.data.grid; GRID_SIZE = data.data.size;
-    canvas.width=GRID_SIZE; canvas.height=GRID_SIZE;
-    render(); autoFit(); broadcast({type:'full',grid,size:GRID_SIZE});
-    document.getElementById('saveMenu').style.display='none';
+    applyFullState(data.data.grid, data.data.size);
+    broadcast({type:'full', grid, size: GRID_SIZE});
+    document.getElementById('saveMenu').style.display = 'none';
   };
 
   window.deleteSave = async (name) => {
@@ -444,14 +538,26 @@
     refreshSaveList();
   };
 
-  const colors=["#D20103","#FF0000","#FF8484","#EC8E01","#FFA500","#FFDC9A","#E2C44B","#FFFF00","#FFFFAE","#226308","#008000","#00FF00","#2227C3","#0000DD","#ADD8E6","#621079","#800080","#CC6CE7","#DCADB6","#FFC0CB","#FFF0F3","#A07D45","#C8A165","#EFD9B8","#FFFFFF","#D3D3D3","#808080","#5F5E5E","#000000"];
-  colors.forEach(c => { const s=document.createElement('div'); s.className='swatch'; s.style.background=c; s.onclick=()=>{ currentColor=c; document.getElementById('picker').value=c; document.getElementById('hexInput').value=c; }; document.getElementById('palette').appendChild(s); });
+  // ── Palette ──────────────────────────────────────────────────────────────
 
-  canvas.onmousedown = (e) => { history.push(JSON.stringify(grid)); isDown=true; paint(e); };
-  canvas.ontouchstart = (e) => { e.preventDefault(); history.push(JSON.stringify(grid)); isDown=true; paint(e); };
-  function endStroke() {
-    isDown=false; lastX=lastY=null;
-  }
+  const colors = ["#D20103","#FF0000","#FF8484","#EC8E01","#FFA500","#FFDC9A","#E2C44B","#FFFF00","#FFFFAE","#226308","#008000","#00FF00","#2227C3","#0000DD","#ADD8E6","#621079","#800080","#CC6CE7","#DCADB6","#FFC0CB","#FFF0F3","#A07D45","#C8A165","#EFD9B8","#FFFFFF","#D3D3D3","#808080","#5F5E5E","#000000"];
+  colors.forEach(c => {
+    const s = document.createElement('div');
+    s.className = 'swatch';
+    s.style.background = c;
+    s.onclick = () => {
+      currentColor = c;
+      document.getElementById('picker').value = c;
+      document.getElementById('hexInput').value = c;
+    };
+    document.getElementById('palette').appendChild(s);
+  });
+
+  // ── Canvas input ─────────────────────────────────────────────────────────
+
+  canvas.onmousedown = (e) => { history.push(JSON.stringify(grid)); isDown = true; paint(e); };
+  canvas.ontouchstart = (e) => { e.preventDefault(); history.push(JSON.stringify(grid)); isDown = true; paint(e); };
+  function endStroke() { isDown = false; lastX = lastY = null; }
   window.onmouseup = endStroke;
   window.ontouchend = endStroke;
   canvas.onmousemove = paint;
