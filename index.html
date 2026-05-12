@@ -44,6 +44,17 @@
 </style>
 </head>
 <body>
+<!-- Google lobby picker modal -->
+<div id="googleLobbyModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:20000; align-items:center; justify-content:center;">
+  <div class="auth-box" style="gap:14px;">
+    <h2 style="margin:0;">Join a Lobby</h2>
+    <p style="margin:0; font-size:13px; color:#aaa; text-align:center;">Enter a lobby code to join a specific room, or leave blank to join the default lobby.</p>
+    <input type="text" id="googleLobbyIn" placeholder="Lobby Code (optional)" style="text-transform:uppercase;">
+    <button id="googleLobbyNextBtn">Next →</button>
+    <button onclick="document.getElementById('googleLobbyModal').style.display='none'" style="background:#444; font-size:12px;">Cancel</button>
+  </div>
+</div>
+
 <div id="authOverlay">
   <div class="auth-box">
     <h2>ColoringPixels</h2>
@@ -131,17 +142,27 @@
     el.style.display = 'block';
   }
 
-  // Save the lobby code to localStorage before the Google OAuth redirect,
-  // then read it back after the page reloads on return.
-  document.getElementById('googleBtn').onclick = async () => {
-    const lobbyVal = (document.getElementById('lobbyIn').value || 'GLOBAL').trim().toUpperCase();
+  // Clicking Google opens the lobby picker modal first
+  document.getElementById('googleBtn').onclick = () => {
+    document.getElementById('googleLobbyIn').value = '';
+    document.getElementById('googleLobbyModal').style.display = 'flex';
+    document.getElementById('googleLobbyIn').focus();
+  };
+
+  // "Next" in the lobby modal saves the code then triggers Google OAuth
+  async function doGoogleSignIn() {
+    const lobbyVal = (document.getElementById('googleLobbyIn').value || 'GLOBAL').trim().toUpperCase();
     localStorage.setItem(LOBBY_STORAGE_KEY, lobbyVal);
+    document.getElementById('googleLobbyModal').style.display = 'none';
     const { error } = await sb.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: window.location.href }
     });
     if (error) showError(error.message);
-  };
+  }
+
+  document.getElementById('googleLobbyNextBtn').onclick = doGoogleSignIn;
+  document.getElementById('googleLobbyIn').onkeydown = (e) => { if (e.key === 'Enter') doGoogleSignIn(); };
 
   // Handle redirect back from Google OAuth
   sb.auth.onAuthStateChange(async (event, session) => {
