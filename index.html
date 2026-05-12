@@ -160,12 +160,21 @@
     const safeEmail = email.replace(/[^a-zA-Z0-9]/g, '_');
     const masterID = 'CP_HOST_' + lobbyID;
     const myID = 'CP_PEER_' + lobbyID + '_' + safeEmail + '_' + Math.floor(Math.random()*999);
-    peer = new Peer(myID, { config: { iceServers: [{ url: 'stun:stun.l.google.com:19302' }] } });
+
+    // Try to claim the host slot
     const masterPeer = new Peer(masterID, { config: { iceServers: [{ url: 'stun:stun.l.google.com:19302' }] } });
-    masterPeer.on('open', () => { isHost = true; });
-    masterPeer.on('connection', setupConnection);
-    peer.on('connection', setupConnection);
-    peer.on('open', () => setupConnection(peer.connect(masterID)));
+    masterPeer.on('open', () => { isHost = true; console.log('I am host'); });
+    masterPeer.on('connection', (conn) => setupConnection(conn));
+    masterPeer.on('error', () => { /* host slot taken */ });
+
+    // Open client peer
+    peer = new Peer(myID, { config: { iceServers: [{ url: 'stun:stun.l.google.com:19302' }] } });
+    peer.on('connection', (conn) => setupConnection(conn));
+    peer.on('open', () => {
+      const conn = peer.connect(masterID);
+      if (conn) setupConnection(conn);
+    });
+
     canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
     autoFit(); render();
     window.addEventListener('resize', autoFit);
@@ -174,11 +183,16 @@
   function setupConnection(conn) {
     if (!conn) return;
     conn.on('open', () => {
-      if (!connections[conn.peer]) {
-        connections[conn.peer] = conn;
-        if (isHost) broadcastCount();
-        updatePeerCountUI();
-        if (!isHost && conn.peer.includes('HOST')) conn.send({type:'sync_req'});
+      if (connections[conn.peer]) return;
+      connections[conn.peer] = conn;
+      updatePeerCountUI();
+      if (isHost) {
+        // Push canvas to new joiner immediately
+        conn.send({type:'full', grid, size: GRID_SIZE});
+        broadcastCount();
+      } else if (conn.peer.includes('HOST')) {
+        // Ask host for canvas
+        conn.send({type:'sync_req'});
       }
     });
     conn.on('data', (data) => {
@@ -198,7 +212,11 @@
         render(); if (isHost) broadcastExcept(data, conn.peer);
       } else if (data.type === 'count_update') updatePeerCountUI(data.count);
     });
-    conn.on('close', () => { delete connections[conn.peer]; if (isHost) broadcastCount(); updatePeerCountUI(); });
+    conn.on('close', () => {
+      delete connections[conn.peer];
+      if (isHost) broadcastCount();
+      updatePeerCountUI();
+    });
   }
 
   function broadcastCount() { broadcast({type:'count_update', count: Object.keys(connections).length}); }
