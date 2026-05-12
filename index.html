@@ -220,13 +220,13 @@
   }
 
   function countUsers() {
-    // Each user has 2 peer IDs (host attempt + client), deduplicate by extracting the username segment
+    // Only count CP_PEER_ connections, not CP_HOST_ (which is just our own host slot)
+    // Also deduplicate by stripping the random suffix from peer IDs
     const seen = new Set();
     for (let id in connections) {
-      // IDs look like CP_HOST_LOBBY or CP_PEER_LOBBY_username_123
-      const parts = id.split('_');
-      // Use a stable key: for HOST it's the lobby, for PEER it's username+lobby
-      const key = id.startsWith('CP_HOST_') ? id : parts.slice(0, parts.length - 1).join('_');
+      if (id.startsWith('CP_HOST_')) continue; // skip host connections
+      // CP_PEER_LOBBY_username_123 -> strip last _123
+      const key = id.replace(/_\d+$/, '');
       seen.add(key);
     }
     return seen.size;
