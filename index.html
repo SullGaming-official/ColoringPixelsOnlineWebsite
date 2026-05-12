@@ -250,20 +250,29 @@
         data.pixels.forEach(p => { grid[p.y][p.x] = p.c; drawPx(p.x, p.y, p.c); });
         if (isHost) broadcastExcept(data, conn.peer);
       } else if (data.type === 'full') {
-        GRID_SIZE = data.size || 64; grid = data.grid;
-        canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
+        const newSize = data.size || 64;
+        GRID_SIZE = newSize; grid = data.grid;
+        if (canvas.width !== GRID_SIZE || canvas.height !== GRID_SIZE) {
+          canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
+          autoFit();
+        }
         document.getElementById('sizeRange').value = GRID_SIZE;
         document.getElementById('sizeLabel').innerText = GRID_SIZE + ' x ' + GRID_SIZE;
-        render(); autoFit();
+        render();
       } else if (data.type === 'sync_req' && isHost) {
         conn.send({type:'full', grid, size: GRID_SIZE});
       } else if (data.type === 'wipe') {
-        GRID_SIZE = data.size || GRID_SIZE;
-        grid = Array.from({length:GRID_SIZE},()=>Array(GRID_SIZE).fill('#FFFFFF'));
-        canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
+        const newSize = data.size || GRID_SIZE;
+        grid = Array.from({length:newSize},()=>Array(newSize).fill('#FFFFFF'));
+        if (canvas.width !== newSize || canvas.height !== newSize) {
+          GRID_SIZE = newSize;
+          canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
+          autoFit();
+        } else {
+          GRID_SIZE = newSize;
+        }
         ctx.fillStyle = '#FFFFFF';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        autoFit();
         if (isHost) broadcastExcept(data, conn.peer);
       } else if (data.type === 'count_update') updatePeerCountUI(data.count);
     });
