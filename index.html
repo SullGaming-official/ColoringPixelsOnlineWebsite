@@ -228,6 +228,8 @@
         document.getElementById('sizeRange').value = GRID_SIZE;
         document.getElementById('sizeLabel').innerText = GRID_SIZE + ' x ' + GRID_SIZE;
         render(); autoFit();
+        // If host received a full update from a client, rebroadcast to everyone else
+        if (isHost) broadcastExcept(data, conn.peer);
       } else if (data.type === 'sync_req' && isHost) {
         conn.send({type:'full', grid, size: GRID_SIZE});
       } else if (data.type === 'wipe') {
@@ -377,7 +379,19 @@
   canvas.onmousedown = (e) => { history.push(JSON.stringify(grid)); isDown=true; paint(e); };
   canvas.ontouchstart = (e) => { e.preventDefault(); history.push(JSON.stringify(grid)); isDown=true; paint(e); };
   function endStroke() {
-    if (isDown) broadcast({type:'full', grid, size: GRID_SIZE});
+    if (isDown) {
+      if (isHost) {
+        // Host broadcasts to all peers
+        broadcast({type:'full', grid, size: GRID_SIZE});
+      } else {
+        // Client sends to host only; host will rebroadcast to everyone
+        for (let id in connections) {
+          if (id.includes('HOST') && connections[id].open) {
+            connections[id].send({type:'full', grid, size: GRID_SIZE});
+          }
+        }
+      }
+    }
     isDown=false; lastX=lastY=null;
   }
   window.onmouseup = endStroke;
