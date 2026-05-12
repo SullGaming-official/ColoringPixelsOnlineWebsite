@@ -222,14 +222,15 @@
       if (data.type === 'px') {
         grid[data.y][data.x] = data.c; drawPx(data.x, data.y, data.c);
         if (isHost) broadcastExcept(data, conn.peer);
+      } else if (data.type === 'batch') {
+        data.pixels.forEach(p => { grid[p.y][p.x] = p.c; drawPx(p.x, p.y, p.c); });
+        if (isHost) broadcastExcept(data, conn.peer);
       } else if (data.type === 'full') {
         GRID_SIZE = data.size || 64; grid = data.grid;
         canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
         document.getElementById('sizeRange').value = GRID_SIZE;
         document.getElementById('sizeLabel').innerText = GRID_SIZE + ' x ' + GRID_SIZE;
         render(); autoFit();
-        // If host received a full update from a client, rebroadcast to everyone else
-        if (isHost) broadcastExcept(data, conn.peer);
       } else if (data.type === 'sync_req' && isHost) {
         conn.send({type:'full', grid, size: GRID_SIZE});
       } else if (data.type === 'wipe') {
@@ -272,9 +273,27 @@
     broadcast({type:'full', grid, size: GRID_SIZE});
   };
 
+  let pixelBatch = [];
+  let batchTimer = null;
   function setPx(x,y,c) {
     if (x<0||x>=GRID_SIZE||y<0||y>=GRID_SIZE||grid[y][x]===c) return;
     grid[y][x]=c; drawPx(x,y,c);
+    pixelBatch.push({x,y,c});
+    if (!batchTimer) {
+      batchTimer = setTimeout(() => {
+        if (pixelBatch.length) {
+          const msg = {type:'batch', pixels: pixelBatch};
+          if (isHost) {
+            broadcast(msg);
+          } else {
+            for (let id in connections) {
+              if (id.includes('HOST') && connections[id].open) connections[id].send(msg);
+            }
+          }
+        }
+        pixelBatch = []; batchTimer = null;
+      }, 20);
+    }
   }
   function drawLine(x0,y0,x1,y1,c) {
     const dx=Math.abs(x1-x0), dy=Math.abs(y1-y0);
@@ -379,19 +398,6 @@
   canvas.onmousedown = (e) => { history.push(JSON.stringify(grid)); isDown=true; paint(e); };
   canvas.ontouchstart = (e) => { e.preventDefault(); history.push(JSON.stringify(grid)); isDown=true; paint(e); };
   function endStroke() {
-    if (isDown) {
-      if (isHost) {
-        // Host broadcasts to all peers
-        broadcast({type:'full', grid, size: GRID_SIZE});
-      } else {
-        // Client sends to host only; host will rebroadcast to everyone
-        for (let id in connections) {
-          if (id.includes('HOST') && connections[id].open) {
-            connections[id].send({type:'full', grid, size: GRID_SIZE});
-          }
-        }
-      }
-    }
     isDown=false; lastX=lastY=null;
   }
   window.onmouseup = endStroke;
