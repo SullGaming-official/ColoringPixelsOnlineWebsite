@@ -179,19 +179,22 @@
     initMultiplayer(email);
   }
 
+  let myPeerID = null;
+
   function initMultiplayer(email) {
     const safeEmail = email.replace(/[^a-zA-Z0-9]/g, '_');
     const masterID = 'CP_HOST_' + lobbyID;
-    const myID = 'CP_PEER_' + lobbyID + '_' + safeEmail + '_' + Math.floor(Math.random()*999);
+    myPeerID = 'CP_PEER_' + lobbyID + '_' + safeEmail + '_' + Math.floor(Math.random()*999);
+    const peerCfg = { config: { iceServers: [{ url: 'stun:stun.l.google.com:19302' }] } };
 
-    // Try to claim the host slot
-    const masterPeer = new Peer(masterID, { config: { iceServers: [{ url: 'stun:stun.l.google.com:19302' }] } });
-    masterPeer.on('open', () => { isHost = true; console.log('I am host'); });
+    // Try to claim host slot
+    const masterPeer = new Peer(masterID, peerCfg);
+    masterPeer.on('open', () => { isHost = true; });
     masterPeer.on('connection', (conn) => setupConnection(conn));
-    masterPeer.on('error', () => { /* host slot taken */ });
+    masterPeer.on('error', () => {});
 
-    // Open client peer
-    peer = new Peer(myID, { config: { iceServers: [{ url: 'stun:stun.l.google.com:19302' }] } });
+    // Open our peer
+    peer = new Peer(myPeerID, peerCfg);
     peer.on('connection', (conn) => setupConnection(conn));
     peer.on('open', () => {
       const conn = peer.connect(masterID);
@@ -203,6 +206,12 @@
     window.addEventListener('resize', autoFit);
   }
 
+  function connectToPeer(id) {
+    if (!id || id === myPeerID || connections[id]) return;
+    const conn = peer.connect(id);
+    if (conn) setupConnection(conn);
+  }
+
   function setupConnection(conn) {
     if (!conn) return;
     conn.on('open', () => {
@@ -210,48 +219,49 @@
       connections[conn.peer] = conn;
       updatePeerCountUI();
       if (isHost) {
-        // Push canvas to new joiner immediately
-        conn.send({type:'full', grid, size: GRID_SIZE});
+        // Send canvas + full peer list so new joiner can mesh with everyone
+        const peerList = Object.keys(connections).filter(id => !id.includes('HOST') && id !== conn.peer);
+        conn.send({type:'full', grid, size: GRID_SIZE, peers: peerList});
+        // Tell all existing peers about the new peer
+        broadcastExcept({type:'new_peer', id: conn.peer}, conn.peer);
         broadcastCount();
       } else if (conn.peer.includes('HOST')) {
-        // Ask host for canvas
         conn.send({type:'sync_req'});
       }
     });
     conn.on('data', (data) => {
-      if (data.type === 'px') {
-        grid[data.y][data.x] = data.c; drawPx(data.x, data.y, data.c);
-        if (isHost) broadcastExcept(data, conn.peer);
-      } else if (data.type === 'batch') {
+      if (data.type === 'batch') {
         data.pixels.forEach(p => { grid[p.y][p.x] = p.c; drawPx(p.x, p.y, p.c); });
-        if (isHost) broadcastExcept(data, conn.peer);
+        // Relay to peers we know about that didn't send this (mesh)
+        broadcastExcept(data, conn.peer);
       } else if (data.type === 'full') {
         GRID_SIZE = data.size || 64; grid = data.grid;
         canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
         document.getElementById('sizeRange').value = GRID_SIZE;
         document.getElementById('sizeLabel').innerText = GRID_SIZE + ' x ' + GRID_SIZE;
         render(); autoFit();
+        // Connect directly to all peers in the list
+        if (data.peers) data.peers.forEach(id => connectToPeer(id));
       } else if (data.type === 'sync_req' && isHost) {
-        conn.send({type:'full', grid, size: GRID_SIZE});
+        const peerList = Object.keys(connections).filter(id => !id.includes('HOST') && id !== conn.peer);
+        conn.send({type:'full', grid, size: GRID_SIZE, peers: peerList});
+      } else if (data.type === 'new_peer') {
+        connectToPeer(data.id);
       } else if (data.type === 'wipe') {
         grid = Array.from({length:GRID_SIZE},()=>Array(GRID_SIZE).fill('#FFFFFF'));
-        render(); if (isHost) broadcastExcept(data, conn.peer);
+        render(); broadcastExcept(data, conn.peer);
       } else if (data.type === 'count_update') updatePeerCountUI(data.count);
     });
     conn.on('close', () => {
       delete connections[conn.peer];
-      if (isHost) broadcastCount();
       updatePeerCountUI();
     });
   }
 
   function countUsers() {
-    // Only count CP_PEER_ connections, not CP_HOST_ (which is just our own host slot)
-    // Also deduplicate by stripping the random suffix from peer IDs
     const seen = new Set();
     for (let id in connections) {
-      if (id.startsWith('CP_HOST_')) continue; // skip host connections
-      // CP_PEER_LOBBY_username_123 -> strip last _123
+      if (id.startsWith('CP_HOST_')) continue;
       const key = id.replace(/_\d+$/, '');
       seen.add(key);
     }
@@ -283,13 +293,8 @@
       batchTimer = setTimeout(() => {
         if (pixelBatch.length) {
           const msg = {type:'batch', pixels: pixelBatch};
-          if (isHost) {
-            broadcast(msg);
-          } else {
-            for (let id in connections) {
-              if (id.includes('HOST') && connections[id].open) connections[id].send(msg);
-            }
-          }
+          // Mesh: send to all connected peers directly
+          broadcast(msg);
         }
         pixelBatch = []; batchTimer = null;
       }, 0);
