@@ -156,7 +156,7 @@
     document.getElementById('googleLobbyModal').style.display = 'none';
     const { error } = await sb.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.href }
+      options: { redirectTo: window.location.origin + window.location.pathname }
     });
     if (error) showError(error.message);
   }
@@ -164,14 +164,17 @@
   document.getElementById('googleLobbyNextBtn').onclick = doGoogleSignIn;
   document.getElementById('googleLobbyIn').onkeydown = (e) => { if (e.key === 'Enter') doGoogleSignIn(); };
 
-  // Handle redirect back from Google OAuth
+  // Handle redirect back from Google OAuth (hash-based tokens)
   sb.auth.onAuthStateChange(async (event, session) => {
-    if (event === 'SIGNED_IN' && session && !currentUser) {
+    if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session && !currentUser) {
       currentUser = session.user;
-      // Retrieve the lobby the user typed before being redirected
       const savedLobby = localStorage.getItem(LOBBY_STORAGE_KEY);
       localStorage.removeItem(LOBBY_STORAGE_KEY);
       lobbyID = (savedLobby && savedLobby !== '') ? savedLobby : 'GLOBAL';
+      // Clean the token hash out of the URL bar
+      if (window.location.hash && window.location.hash.includes('access_token')) {
+        history.replaceState(null, '', window.location.pathname);
+      }
       startApp(session.user.email);
     }
   });
@@ -201,6 +204,7 @@
   }
 
   function startApp(email) {
+    if (document.getElementById('authOverlay').style.display === 'none') return; // already started
     document.getElementById('authOverlay').style.display = 'none';
     document.getElementById('mainApp').style.display = 'flex';
     document.getElementById('accountName').innerText = email;
@@ -422,18 +426,6 @@
   window.ontouchend = endStroke;
   canvas.onmousemove = paint;
   canvas.ontouchmove = (e) => { e.preventDefault(); paint(e); };
-
-  // Restore session on page load (also handles Google OAuth redirect return)
-  sb.auth.getSession().then(({ data }) => {
-    if (data.session && !currentUser) {
-      currentUser = data.session.user;
-      // Pick up any lobby code saved before the Google redirect
-      const savedLobby = localStorage.getItem(LOBBY_STORAGE_KEY);
-      localStorage.removeItem(LOBBY_STORAGE_KEY);
-      lobbyID = (savedLobby && savedLobby !== '') ? savedLobby : 'GLOBAL';
-      startApp(currentUser.email);
-    }
-  });
 </script>
 </body>
 </html>
