@@ -265,8 +265,12 @@
       } else if (data.type === 'sync_req' && isHost) {
         conn.send({type:'full', grid, size: GRID_SIZE});
       } else if (data.type === 'wipe') {
+        // FIX: use size from message so all peers stay in sync
+        GRID_SIZE = data.size || GRID_SIZE;
         grid = Array.from({length:GRID_SIZE},()=>Array(GRID_SIZE).fill('#FFFFFF'));
-        render(); if (isHost) broadcastExcept(data, conn.peer);
+        canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
+        render(); autoFit();
+        if (isHost) broadcastExcept(data, conn.peer);
       } else if (data.type === 'count_update') updatePeerCountUI(data.count);
     });
     conn.on('close', () => {
@@ -341,15 +345,28 @@
       lastX=x; lastY=y;
     }
   }
-  function floodFill(x,y,t,r) {
-    if (t===r) return;
-    const s=[[x,y]];
-    while(s.length) {
-      const [cx,cy]=s.pop();
-      if(cx<0||cy<0||cx>=GRID_SIZE||cy>=GRID_SIZE||grid[cy][cx]!==t) continue;
-      setPx(cx,cy,r); s.push([cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]);
+
+  // FIX: collect all fill pixels first, then send one batch at the end.
+  // Also uses a visited Set to prevent re-queuing already-filled cells.
+  function floodFill(x, y, t, r) {
+    if (t === r) return;
+    const pixels = [];
+    const visited = new Set();
+    const s = [[x, y]];
+    while (s.length) {
+      const [cx, cy] = s.pop();
+      if (cx < 0 || cy < 0 || cx >= GRID_SIZE || cy >= GRID_SIZE) continue;
+      const key = cy * GRID_SIZE + cx;
+      if (visited.has(key) || grid[cy][cx] !== t) continue;
+      visited.add(key);
+      grid[cy][cx] = r;
+      drawPx(cx, cy, r);
+      pixels.push({ x: cx, y: cy, c: r });
+      s.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
     }
+    if (pixels.length) broadcast({ type: 'batch', pixels });
   }
+
   function broadcast(m) { for(let id in connections) if(connections[id].open) connections[id].send(m); }
   function broadcastExcept(m,s) { for(let id in connections) if(id!==s&&connections[id].open) connections[id].send(m); }
   function drawPx(x,y,c) { ctx.fillStyle=c; ctx.fillRect(x,y,1,1); }
@@ -365,7 +382,18 @@
   document.getElementById('fillBtn').onclick = () => { tool='fill'; document.querySelectorAll('.tool').forEach(b=>b.classList.remove('active')); document.getElementById('fillBtn').classList.add('active'); };
   document.getElementById('undoBtn').onclick = () => { if(history.length){ redoStack.push(JSON.stringify(grid)); grid=JSON.parse(history.pop()); render(); broadcast({type:'full',grid,size:GRID_SIZE}); } };
   document.getElementById('redoBtn').onclick = () => { if(redoStack.length){ history.push(JSON.stringify(grid)); grid=JSON.parse(redoStack.pop()); render(); broadcast({type:'full',grid,size:GRID_SIZE}); } };
-  document.getElementById('wipeBtn').onclick = () => { if(confirm('Wipe all?')){ grid=Array.from({length:GRID_SIZE},()=>Array(GRID_SIZE).fill('#FFFFFF')); render(); broadcast({type:'wipe'}); } };
+
+  // FIX: push to history before wiping, and send size in the wipe message
+  document.getElementById('wipeBtn').onclick = () => {
+    if (confirm('Wipe all?')) {
+      history.push(JSON.stringify(grid));
+      redoStack = [];
+      grid = Array.from({length:GRID_SIZE},()=>Array(GRID_SIZE).fill('#FFFFFF'));
+      render();
+      broadcast({type:'wipe', size: GRID_SIZE});
+    }
+  };
+
   document.getElementById('exportBtn').onclick = () => { const a=document.createElement('a'); a.download='art.png'; a.href=canvas.toDataURL(); a.click(); };
   document.getElementById('picker').oninput = (e) => { currentColor=e.target.value; document.getElementById('hexInput').value=currentColor; };
 
