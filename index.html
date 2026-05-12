@@ -44,7 +44,6 @@
 </style>
 </head>
 <body>
-<!-- Google lobby picker modal -->
 <div id="googleLobbyModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:20000; align-items:center; justify-content:center;">
   <div class="auth-box" style="gap:14px;">
     <h2 style="margin:0;">Join a Lobby</h2>
@@ -142,14 +141,12 @@
     el.style.display = 'block';
   }
 
-  // Clicking Google opens the lobby picker modal first
   document.getElementById('googleBtn').onclick = () => {
     document.getElementById('googleLobbyIn').value = '';
     document.getElementById('googleLobbyModal').style.display = 'flex';
     document.getElementById('googleLobbyIn').focus();
   };
 
-  // "Next" in the lobby modal saves the code then triggers Google OAuth
   async function doGoogleSignIn() {
     const lobbyVal = (document.getElementById('googleLobbyIn').value || 'GLOBAL').trim().toUpperCase();
     localStorage.setItem(LOBBY_STORAGE_KEY, lobbyVal);
@@ -164,14 +161,12 @@
   document.getElementById('googleLobbyNextBtn').onclick = doGoogleSignIn;
   document.getElementById('googleLobbyIn').onkeydown = (e) => { if (e.key === 'Enter') doGoogleSignIn(); };
 
-  // Handle redirect back from Google OAuth (hash-based tokens)
   sb.auth.onAuthStateChange(async (event, session) => {
     if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session && !currentUser) {
       currentUser = session.user;
       const savedLobby = localStorage.getItem(LOBBY_STORAGE_KEY);
       localStorage.removeItem(LOBBY_STORAGE_KEY);
       lobbyID = (savedLobby && savedLobby !== '') ? savedLobby : 'GLOBAL';
-      // Clean the token hash out of the URL bar
       if (window.location.hash && window.location.hash.includes('access_token')) {
         history.replaceState(null, '', window.location.pathname);
       }
@@ -204,7 +199,7 @@
   }
 
   function startApp(email) {
-    if (document.getElementById('authOverlay').style.display === 'none') return; // already started
+    if (document.getElementById('authOverlay').style.display === 'none') return;
     document.getElementById('authOverlay').style.display = 'none';
     document.getElementById('mainApp').style.display = 'flex';
     document.getElementById('accountName').innerText = email;
@@ -220,13 +215,11 @@
     myPeerID = 'CP_PEER_' + lobbyID + '_' + safeEmail + '_' + Math.floor(Math.random()*999);
     const peerCfg = { config: { iceServers: [{ url: 'stun:stun.l.google.com:19302' }] } };
 
-    // Try to become host
     const masterPeer = new Peer(masterID, peerCfg);
     masterPeer.on('open', () => { isHost = true; });
     masterPeer.on('connection', conn => setupConnection(conn));
     masterPeer.on('error', () => {});
 
-    // Open client peer
     peer = new Peer(myPeerID, peerCfg);
     peer.on('connection', conn => setupConnection(conn));
     peer.on('open', () => {
@@ -346,8 +339,6 @@
     }
   }
 
-  // FIX: collect all fill pixels first, then send one batch at the end.
-  // Also uses a visited Set to prevent re-queuing already-filled cells.
   function floodFill(x, y, t, r) {
     if (t === r) return;
     const pixels = [];
@@ -383,7 +374,6 @@
   document.getElementById('undoBtn').onclick = () => { if(history.length){ redoStack.push(JSON.stringify(grid)); grid=JSON.parse(history.pop()); render(); broadcast({type:'full',grid,size:GRID_SIZE}); } };
   document.getElementById('redoBtn').onclick = () => { if(redoStack.length){ history.push(JSON.stringify(grid)); grid=JSON.parse(redoStack.pop()); render(); broadcast({type:'full',grid,size:GRID_SIZE}); } };
 
-  // FIX: push to history before wiping, and send size in the wipe message
   document.getElementById('wipeBtn').onclick = () => {
     if (confirm('Wipe all?')) {
       history.push(JSON.stringify(grid));
