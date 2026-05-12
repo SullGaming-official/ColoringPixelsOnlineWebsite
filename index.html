@@ -106,6 +106,8 @@
   const SUPABASE_KEY = 'sb_publishable_t4lLSlKfleiGVWtN7chPxA_QD2anmwU';
   const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+  const LOBBY_STORAGE_KEY = 'cp_pending_lobby';
+
   let currentUser = null;
   let peer, lobbyID, connections = {};
   let GRID_SIZE = 64;
@@ -129,8 +131,11 @@
     el.style.display = 'block';
   }
 
+  // Save the lobby code to localStorage before the Google OAuth redirect,
+  // then read it back after the page reloads on return.
   document.getElementById('googleBtn').onclick = async () => {
-    lobbyID = (document.getElementById('lobbyIn').value || 'GLOBAL').trim().toUpperCase();
+    const lobbyVal = (document.getElementById('lobbyIn').value || 'GLOBAL').trim().toUpperCase();
+    localStorage.setItem(LOBBY_STORAGE_KEY, lobbyVal);
     const { error } = await sb.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: window.location.href }
@@ -138,11 +143,14 @@
     if (error) showError(error.message);
   };
 
-  // Handle redirect back from Google
+  // Handle redirect back from Google OAuth
   sb.auth.onAuthStateChange(async (event, session) => {
     if (event === 'SIGNED_IN' && session && !currentUser) {
       currentUser = session.user;
-      lobbyID = lobbyID || 'GLOBAL';
+      // Retrieve the lobby the user typed before being redirected
+      const savedLobby = localStorage.getItem(LOBBY_STORAGE_KEY);
+      localStorage.removeItem(LOBBY_STORAGE_KEY);
+      lobbyID = (savedLobby && savedLobby !== '') ? savedLobby : 'GLOBAL';
       startApp(session.user.email);
     }
   });
@@ -278,7 +286,6 @@
       batchTimer = setTimeout(() => {
         if (pixelBatch.length) {
           const msg = {type:'batch', pixels: pixelBatch};
-          // Mesh: send to all connected peers directly
           broadcast(msg);
         }
         pixelBatch = []; batchTimer = null;
@@ -395,11 +402,14 @@
   canvas.onmousemove = paint;
   canvas.ontouchmove = (e) => { e.preventDefault(); paint(e); };
 
-  // Restore session on page load
+  // Restore session on page load (also handles Google OAuth redirect return)
   sb.auth.getSession().then(({ data }) => {
-    if (data.session) {
+    if (data.session && !currentUser) {
       currentUser = data.session.user;
-      lobbyID = 'GLOBAL';
+      // Pick up any lobby code saved before the Google redirect
+      const savedLobby = localStorage.getItem(LOBBY_STORAGE_KEY);
+      localStorage.removeItem(LOBBY_STORAGE_KEY);
+      lobbyID = (savedLobby && savedLobby !== '') ? savedLobby : 'GLOBAL';
       startApp(currentUser.email);
     }
   });
