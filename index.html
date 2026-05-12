@@ -222,6 +222,9 @@
       if (data.type === 'px') {
         grid[data.y][data.x] = data.c; drawPx(data.x, data.y, data.c);
         if (isHost) broadcastExcept(data, conn.peer);
+      } else if (data.type === 'batch') {
+        data.pixels.forEach(p => { grid[p.y][p.x] = p.c; drawPx(p.x, p.y, p.c); });
+        if (isHost) broadcastExcept(data, conn.peer);
       } else if (data.type === 'full') {
         GRID_SIZE = data.size || 64; grid = data.grid;
         canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
@@ -270,10 +273,19 @@
     broadcast({type:'full', grid, size: GRID_SIZE});
   };
 
+  let pixelBatch = [];
+  let batchTimer = null;
   function setPx(x,y,c) {
     if (x<0||x>=GRID_SIZE||y<0||y>=GRID_SIZE||grid[y][x]===c) return;
     grid[y][x]=c; drawPx(x,y,c);
-    broadcast({type:'px', x, y, c});
+    pixelBatch.push({x, y, c});
+    if (!batchTimer) {
+      batchTimer = setTimeout(() => {
+        if (pixelBatch.length) broadcast({type:'batch', pixels: pixelBatch});
+        pixelBatch = [];
+        batchTimer = null;
+      }, 30);
+    }
   }
   function drawLine(x0,y0,x1,y1,c) {
     const dx=Math.abs(x1-x0), dy=Math.abs(y1-y0);
