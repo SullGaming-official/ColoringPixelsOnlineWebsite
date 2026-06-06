@@ -255,22 +255,29 @@
     });
   }
   function applyFullState(newGrid, newSize) {
+    const sizeChanged = newSize !== GRID_SIZE;
     GRID_SIZE = newSize;
     grid = newGrid;
-    canvas.width = GRID_SIZE;
-    canvas.height = GRID_SIZE;
+    if (sizeChanged) {
+      canvas.width = GRID_SIZE;
+      canvas.height = GRID_SIZE;
+      autoFit();
+    }
     document.getElementById('sizeRange').value = GRID_SIZE;
     document.getElementById('sizeLabel').innerText = GRID_SIZE + ' x ' + GRID_SIZE;
-    autoFit();
     render();
   }
   function applyWipe(newSize) {
+    const sizeChanged = newSize !== GRID_SIZE;
     GRID_SIZE = newSize;
     grid = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill('#FFFFFF'));
-    canvas.width = GRID_SIZE;
-    canvas.height = GRID_SIZE;
-    render();
-    autoFit();
+    if (sizeChanged) {
+      canvas.width = GRID_SIZE;
+      canvas.height = GRID_SIZE;
+      autoFit();
+    }
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, GRID_SIZE, GRID_SIZE);
   }
   function countUsers() {
     const seen = new Set();
@@ -484,9 +491,9 @@
     };
     document.getElementById('palette').appendChild(s);
   });
-  canvas.onmousedown = (e) => { history.push(JSON.stringify(grid)); isDown = true; paint(e); };
-  canvas.ontouchstart = (e) => { e.preventDefault(); history.push(JSON.stringify(grid)); isDown = true; paint(e); };
-  function endStroke() { isDown = false; lastX = lastY = null; }
+  canvas.onmousedown = (e) => { isDown = true; paint(e); };
+  canvas.ontouchstart = (e) => { e.preventDefault(); isDown = true; paint(e); };
+  function endStroke() { if (isDown) { history.push(JSON.stringify(grid)); redoStack = []; } isDown = false; lastX = lastY = null; }
   window.onmouseup = endStroke;
   window.ontouchend = endStroke;
   canvas.onmousemove = paint;
