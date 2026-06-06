@@ -269,8 +269,8 @@
     grid = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill('#FFFFFF'));
     canvas.width = GRID_SIZE;
     canvas.height = GRID_SIZE;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     autoFit();
-    render();
   }
   function countUsers() {
     const seen = new Set();
@@ -365,7 +365,6 @@
       }
     }
     if (!pixels.length) return;
-    ctx.fillStyle = fillColor;
     for (let i = 0; i < pixels.length; i++) {
       drawPx(pixels[i].x, pixels[i].y, pixels[i].c);
     }
@@ -386,10 +385,10 @@
     ctx.fillRect(x, y, 1, 1);
   }
   function render() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
     for (let y = 0; y < GRID_SIZE; y++) {
       for (let x = 0; x < GRID_SIZE; x++) {
-        drawPx(x, y, grid[y][x]);
+        ctx.fillStyle = grid[y][x];
+        ctx.fillRect(x, y, 1, 1);
       }
     }
   }
