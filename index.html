@@ -269,7 +269,7 @@
     grid = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill('#FFFFFF'));
     canvas.width = GRID_SIZE;
     canvas.height = GRID_SIZE;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    render();
     autoFit();
   }
   function countUsers() {
