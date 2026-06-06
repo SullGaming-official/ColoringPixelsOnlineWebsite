@@ -247,9 +247,15 @@
     });
     conn.on('data', data => {
       if (data.type === 'batch') {
-        data.pixels.forEach(p => { grid[p.y][p.x] = p.c; });
-        renderPixels(data.pixels);
-        if (isHost) broadcastExcept(data, conn.peer);
+        let changed = false;
+        data.pixels.forEach(p => {
+          if (grid[p.y][p.x] !== p.c) {
+            grid[p.y][p.x] = p.c;
+            drawPx(p.x, p.y, p.c);
+            changed = true;
+          }
+        });
+        if (isHost && changed) broadcastExcept(data, conn.peer);
       } else if (data.type === 'full') {
         applyFullState(data.grid, data.size || 64);
       } else if (data.type === 'sync_req' && isHost) {
@@ -266,8 +272,6 @@
     });
   }
 
-  // ── Atomic state helpers ─────────────────────────────────────────────────
-
   function applyFullState(newGrid, newSize) {
     GRID_SIZE = newSize;
     grid = newGrid;
@@ -279,7 +283,6 @@
     render();
   }
 
-  // Wipe: build a fresh white grid atomically, then render once.
   function applyWipe(newSize) {
     GRID_SIZE = newSize;
     grid = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill('#FFFFFF'));
@@ -288,8 +291,6 @@
     autoFit();
     render();
   }
-
-  // ── Peer count ───────────────────────────────────────────────────────────
 
   function countUsers() {
     const seen = new Set();
@@ -313,8 +314,6 @@
     applyWipe(newSize);
     broadcast({type:'full', grid, size: GRID_SIZE});
   };
-
-  // ── Pixel batching ───────────────────────────────────────────────────────
 
   let pixelBatch = [];
   let batchTimer = null;
@@ -363,14 +362,11 @@
     }
   }
 
-  // ── FIXED: Flood fill ────────────────────────────────────────────────────
-  // All grid writes happen first; one render call at the end.
-  // No incremental ctx.fillRect during traversal = no partial/glitchy paints.
   function floodFill(x, y, targetColor, fillColor) {
     if (targetColor === fillColor) return;
 
     const pixels = [];
-    const visited = new Uint8Array(GRID_SIZE * GRID_SIZE); // fast bit array
+    const visited = new Uint8Array(GRID_SIZE * GRID_SIZE);
     const stack = [y * GRID_SIZE + x];
     visited[y * GRID_SIZE + x] = 1;
 
@@ -380,15 +376,14 @@
       const cx = idx % GRID_SIZE;
       if (grid[cy][cx] !== targetColor) continue;
 
-      // Write to grid data structure only — no canvas ops yet
       grid[cy][cx] = fillColor;
       pixels.push({x: cx, y: cy, c: fillColor});
 
       const neighbors = [
-        cy > 0            ? (cy - 1) * GRID_SIZE + cx : -1,
+        cy > 0          ? (cy - 1) * GRID_SIZE + cx : -1,
         cy < GRID_SIZE-1  ? (cy + 1) * GRID_SIZE + cx : -1,
-        cx > 0            ?  cy      * GRID_SIZE + cx - 1 : -1,
-        cx < GRID_SIZE-1  ?  cy      * GRID_SIZE + cx + 1 : -1,
+        cx > 0          ?  cy     * GRID_SIZE + cx - 1 : -1,
+        cx < GRID_SIZE-1  ?  cy     * GRID_SIZE + cx + 1 : -1,
       ];
       for (let i = 0; i < 4; i++) {
         const n = neighbors[i];
@@ -401,7 +396,6 @@
 
     if (!pixels.length) return;
 
-    // Single atomic render pass — draw only the changed pixels
     ctx.fillStyle = fillColor;
     for (let i = 0; i < pixels.length; i++) {
       ctx.fillRect(pixels[i].x, pixels[i].y, 1, 1);
@@ -410,8 +404,6 @@
     broadcast({type: 'batch', pixels});
   }
 
-  // ── FIXED: Wipe board ────────────────────────────────────────────────────
-  // Uses applyWipe() for atomic grid+canvas reset, then broadcasts.
   document.getElementById('wipeBtn').onclick = () => {
     if (!confirm('Wipe all?')) return;
     history.push(JSON.stringify(grid));
@@ -420,21 +412,17 @@
     broadcast({type: 'wipe', size: GRID_SIZE});
   };
 
-  // ── Render helpers ───────────────────────────────────────────────────────
-
   function broadcast(m) { for (let id in connections) if (connections[id].open) connections[id].send(m); }
   function broadcastExcept(m, s) { for (let id in connections) if (id !== s && connections[id].open) connections[id].send(m); }
 
   function drawPx(x, y, c) { ctx.fillStyle = c; ctx.fillRect(x, y, 1, 1); }
 
-  // Render a sparse list of pixels (used for incoming batch messages)
   function renderPixels(pixels) {
     for (let i = 0; i < pixels.length; i++) {
       drawPx(pixels[i].x, pixels[i].y, pixels[i].c);
     }
   }
 
-  // Full canvas redraw from grid state
   function render() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     for (let y = 0; y < GRID_SIZE; y++) {
@@ -450,8 +438,6 @@
     canvas.style.width = s + 'px';
     canvas.style.height = s + 'px';
   }
-
-  // ── Tool buttons ─────────────────────────────────────────────────────────
 
   function setTool(t) {
     tool = t;
@@ -488,8 +474,6 @@
     currentColor = e.target.value;
     document.getElementById('hexInput').value = currentColor;
   };
-
-  // ── Save/load menu ───────────────────────────────────────────────────────
 
   document.getElementById('openSaveMenuBtn').onclick = () => {
     document.getElementById('saveMenu').style.display = 'block';
@@ -538,8 +522,6 @@
     refreshSaveList();
   };
 
-  // ── Palette ──────────────────────────────────────────────────────────────
-
   const colors = ["#D20103","#FF0000","#FF8484","#EC8E01","#FFA500","#FFDC9A","#E2C44B","#FFFF00","#FFFFAE","#226308","#008000","#00FF00","#2227C3","#0000DD","#ADD8E6","#621079","#800080","#CC6CE7","#DCADB6","#FFC0CB","#FFF0F3","#A07D45","#C8A165","#EFD9B8","#FFFFFF","#D3D3D3","#808080","#5F5E5E","#000000"];
   colors.forEach(c => {
     const s = document.createElement('div');
@@ -552,8 +534,6 @@
     };
     document.getElementById('palette').appendChild(s);
   });
-
-  // ── Canvas input ─────────────────────────────────────────────────────────
 
   canvas.onmousedown = (e) => { history.push(JSON.stringify(grid)); isDown = true; paint(e); };
   canvas.ontouchstart = (e) => { e.preventDefault(); history.push(JSON.stringify(grid)); isDown = true; paint(e); };
