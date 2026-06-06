@@ -115,9 +115,7 @@
   const SUPABASE_URL = 'https://wkjxmmjcdknjwvvbmnkp.supabase.co';
   const SUPABASE_KEY = 'sb_publishable_t4lLSlKfleiGVWtN7chPxA_QD2anmwU';
   const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
   const LOBBY_STORAGE_KEY = 'cp_pending_lobby';
-
   let currentUser = null;
   let peer, lobbyID, connections = {};
   let GRID_SIZE = 64;
@@ -125,7 +123,6 @@
   let history = [], redoStack = [], tool = 'brush', currentColor = '#000000', isDown = false;
   let isHost = false, lastX = null, lastY = null;
   const canvas = document.getElementById('canvas'), ctx = canvas.getContext('2d');
-
   let authMode = 'login';
   function showTab(mode) {
     authMode = mode;
@@ -134,19 +131,16 @@
     document.getElementById('authBtn').textContent = mode === 'login' ? 'Login' : 'Create Account';
     document.getElementById('authError').style.display = 'none';
   }
-
   function showError(msg) {
     const el = document.getElementById('authError');
     el.textContent = msg;
     el.style.display = 'block';
   }
-
   document.getElementById('googleBtn').onclick = () => {
     document.getElementById('googleLobbyIn').value = '';
     document.getElementById('googleLobbyModal').style.display = 'flex';
     document.getElementById('googleLobbyIn').focus();
   };
-
   async function doGoogleSignIn() {
     const lobbyVal = (document.getElementById('googleLobbyIn').value || 'GLOBAL').trim().toUpperCase();
     localStorage.setItem(LOBBY_STORAGE_KEY, lobbyVal);
@@ -157,10 +151,8 @@
     });
     if (error) showError(error.message);
   }
-
   document.getElementById('googleLobbyNextBtn').onclick = doGoogleSignIn;
   document.getElementById('googleLobbyIn').onkeydown = (e) => { if (e.key === 'Enter') doGoogleSignIn(); };
-
   sb.auth.onAuthStateChange(async (event, session) => {
     if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session && !currentUser) {
       currentUser = session.user;
@@ -173,7 +165,6 @@
       startApp(session.user.email);
     }
   });
-
   document.getElementById('authBtn').onclick = async () => {
     const email = document.getElementById('emailIn').value.trim();
     const pass = document.getElementById('passIn').value;
@@ -192,12 +183,10 @@
       startApp(email);
     }
   };
-
   async function logout() {
     await sb.auth.signOut();
     location.reload();
   }
-
   function startApp(email) {
     if (document.getElementById('authOverlay').style.display === 'none') return;
     document.getElementById('authOverlay').style.display = 'none';
@@ -206,32 +195,26 @@
     document.getElementById('lobbyLabel').innerText = 'Lobby: ' + lobbyID;
     initMultiplayer(email);
   }
-
   let myPeerID = null;
-
   function initMultiplayer(email) {
     const safeEmail = email.replace(/[^a-zA-Z0-9]/g, '_');
     const masterID = 'CP_HOST_' + lobbyID;
     myPeerID = 'CP_PEER_' + lobbyID + '_' + safeEmail + '_' + Math.floor(Math.random()*999);
     const peerCfg = { config: { iceServers: [{ url: 'stun:stun.l.google.com:19302' }] } };
-
     const masterPeer = new Peer(masterID, peerCfg);
     masterPeer.on('open', () => { isHost = true; });
     masterPeer.on('connection', conn => setupConnection(conn));
     masterPeer.on('error', () => {});
-
     peer = new Peer(myPeerID, peerCfg);
     peer.on('connection', conn => setupConnection(conn));
     peer.on('open', () => {
       const conn = peer.connect(masterID);
       if (conn) setupConnection(conn);
     });
-
     canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
     autoFit(); render();
     window.addEventListener('resize', autoFit);
   }
-
   function setupConnection(conn) {
     if (!conn) return;
     conn.on('open', () => {
@@ -271,7 +254,6 @@
       updatePeerCountUI();
     });
   }
-
   function applyFullState(newGrid, newSize) {
     GRID_SIZE = newSize;
     grid = newGrid;
@@ -282,7 +264,6 @@
     autoFit();
     render();
   }
-
   function applyWipe(newSize) {
     GRID_SIZE = newSize;
     grid = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill('#FFFFFF'));
@@ -291,7 +272,6 @@
     autoFit();
     render();
   }
-
   function countUsers() {
     const seen = new Set();
     for (let id in connections) {
@@ -306,7 +286,6 @@
     const c = (ov !== undefined) ? ov : countUsers();
     document.getElementById('status').innerText = 'Peers: ' + c;
   }
-
   document.getElementById('sizeRange').onchange = (e) => {
     if (!confirm('Resizing the grid will wipe the current canvas. Continue?')) { e.target.value = GRID_SIZE; return; }
     const newSize = parseInt(e.target.value);
@@ -314,7 +293,6 @@
     applyWipe(newSize);
     broadcast({type:'full', grid, size: GRID_SIZE});
   };
-
   let pixelBatch = [];
   let batchTimer = null;
   function setPx(x, y, c) {
@@ -330,7 +308,6 @@
       }, 0);
     }
   }
-
   function drawLine(x0, y0, x1, y1, c) {
     const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
     const sx = (x0 < x1) ? 1 : -1, sy = (y0 < y1) ? 1 : -1;
@@ -343,7 +320,6 @@
       if (e2 < dx)  { err += dx; y0 += sy; }
     }
   }
-
   function paint(e) {
     if (!isDown) return;
     const rect = canvas.getBoundingClientRect();
@@ -361,24 +337,19 @@
       lastX = x; lastY = y;
     }
   }
-
   function floodFill(x, y, targetColor, fillColor) {
     if (targetColor === fillColor) return;
-
     const pixels = [];
     const visited = new Uint8Array(GRID_SIZE * GRID_SIZE);
     const stack = [y * GRID_SIZE + x];
     visited[y * GRID_SIZE + x] = 1;
-
     while (stack.length) {
       const idx = stack.pop();
       const cy = (idx / GRID_SIZE) | 0;
       const cx = idx % GRID_SIZE;
       if (grid[cy][cx] !== targetColor) continue;
-
       grid[cy][cx] = fillColor;
       pixels.push({x: cx, y: cy, c: fillColor});
-
       const neighbors = [
         cy > 0          ? (cy - 1) * GRID_SIZE + cx : -1,
         cy < GRID_SIZE-1  ? (cy + 1) * GRID_SIZE + cx : -1,
@@ -393,17 +364,13 @@
         }
       }
     }
-
     if (!pixels.length) return;
-
     ctx.fillStyle = fillColor;
     for (let i = 0; i < pixels.length; i++) {
-      ctx.fillRect(pixels[i].x, pixels[i].y, 1, 1);
+      drawPx(pixels[i].x, pixels[i].y, pixels[i].c);
     }
-
     broadcast({type: 'batch', pixels});
   }
-
   document.getElementById('wipeBtn').onclick = () => {
     if (!confirm('Wipe all?')) return;
     history.push(JSON.stringify(grid));
@@ -411,18 +378,9 @@
     applyWipe(GRID_SIZE);
     broadcast({type: 'wipe', size: GRID_SIZE});
   };
-
   function broadcast(m) { for (let id in connections) if (connections[id].open) connections[id].send(m); }
   function broadcastExcept(m, s) { for (let id in connections) if (id !== s && connections[id].open) connections[id].send(m); }
-
   function drawPx(x, y, c) { ctx.fillStyle = c; ctx.fillRect(x, y, 1, 1); }
-
-  function renderPixels(pixels) {
-    for (let i = 0; i < pixels.length; i++) {
-      drawPx(pixels[i].x, pixels[i].y, pixels[i].c);
-    }
-  }
-
   function render() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     for (let y = 0; y < GRID_SIZE; y++) {
@@ -431,14 +389,12 @@
       }
     }
   }
-
   function autoFit() {
     const wrap = document.getElementById('canvasWrap').getBoundingClientRect();
     const s = Math.min(wrap.width * 0.96, wrap.height * 0.96);
     canvas.style.width = s + 'px';
     canvas.style.height = s + 'px';
   }
-
   function setTool(t) {
     tool = t;
     document.querySelectorAll('.tool').forEach(b => b.classList.remove('active'));
@@ -447,7 +403,6 @@
   document.getElementById('brushBtn').onclick  = () => setTool('brush');
   document.getElementById('eraserBtn').onclick = () => setTool('eraser');
   document.getElementById('fillBtn').onclick   = () => setTool('fill');
-
   document.getElementById('undoBtn').onclick = () => {
     if (!history.length) return;
     redoStack.push(JSON.stringify(grid));
@@ -462,25 +417,21 @@
     render();
     broadcast({type:'full', grid, size: GRID_SIZE});
   };
-
   document.getElementById('exportBtn').onclick = () => {
     const a = document.createElement('a');
     a.download = 'art.png';
     a.href = canvas.toDataURL();
     a.click();
   };
-
   document.getElementById('picker').oninput = (e) => {
     currentColor = e.target.value;
     document.getElementById('hexInput').value = currentColor;
   };
-
   document.getElementById('openSaveMenuBtn').onclick = () => {
     document.getElementById('saveMenu').style.display = 'block';
     refreshSaveList();
   };
   document.getElementById('exitSaveMenuBtn').onclick = () => document.getElementById('saveMenu').style.display = 'none';
-
   document.getElementById('menuSaveBtn').onclick = async () => {
     const name = document.getElementById('menuSaveName').value.trim() || 'My Drawing';
     const { error } = await sb.from('saves').upsert({ user_id: currentUser.id, name, data: { grid, size: GRID_SIZE } }, { onConflict: 'user_id,name' });
@@ -489,7 +440,6 @@
     document.getElementById('menuSaveName').value = '';
     refreshSaveList();
   };
-
   async function refreshSaveList() {
     const list = document.getElementById('slotList');
     list.innerHTML = '<i style="color:#999; padding:10px; display:block;">Loading...</i>';
@@ -507,7 +457,6 @@
       list.appendChild(div);
     });
   }
-
   window.loadSave = async (name) => {
     const { data, error } = await sb.from('saves').select('data').eq('user_id', currentUser.id).eq('name', name).single();
     if (error || !data) return alert('Failed to load.');
@@ -515,13 +464,11 @@
     broadcast({type:'full', grid, size: GRID_SIZE});
     document.getElementById('saveMenu').style.display = 'none';
   };
-
   window.deleteSave = async (name) => {
     if (!confirm(`Delete "${name}"?`)) return;
     await sb.from('saves').delete().eq('user_id', currentUser.id).eq('name', name);
     refreshSaveList();
   };
-
   const colors = ["#D20103","#FF0000","#FF8484","#EC8E01","#FFA500","#FFDC9A","#E2C44B","#FFFF00","#FFFFAE","#226308","#008000","#00FF00","#2227C3","#0000DD","#ADD8E6","#621079","#800080","#CC6CE7","#DCADB6","#FFC0CB","#FFF0F3","#A07D45","#C8A165","#EFD9B8","#FFFFFF","#D3D3D3","#808080","#5F5E5E","#000000"];
   colors.forEach(c => {
     const s = document.createElement('div');
@@ -534,7 +481,6 @@
     };
     document.getElementById('palette').appendChild(s);
   });
-
   canvas.onmousedown = (e) => { history.push(JSON.stringify(grid)); isDown = true; paint(e); };
   canvas.ontouchstart = (e) => { e.preventDefault(); history.push(JSON.stringify(grid)); isDown = true; paint(e); };
   function endStroke() { isDown = false; lastX = lastY = null; }
