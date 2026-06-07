@@ -4,7 +4,7 @@
 <link rel="icon" type="image/png" href="favicon.png">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-<title>ColoringPixelsOnline</title>
+<title>AColoringPixelsOnline</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <style>
@@ -187,8 +187,10 @@
     await sb.auth.signOut();
     location.reload();
   }
+  let appStarted = false;
   function startApp(email) {
-    if (document.getElementById('authOverlay').style.display === 'none') return;
+    if (appStarted) return;
+    appStarted = true;
     document.getElementById('authOverlay').style.display = 'none';
     document.getElementById('mainApp').style.display = 'flex';
     document.getElementById('accountName').innerText = email;
