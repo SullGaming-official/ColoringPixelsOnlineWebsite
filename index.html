@@ -86,7 +86,7 @@
       <div class="label">Tools</div>
       <button class="tool active" id="brushBtn">Brush</button>
       <button class="tool" id="eraserBtn">Eraser</button>
-      <button class="tool" id="fillBtn">Flood Fill</button>
+      <button class="tool" id="fillBtn">Fill White</button>
       <div style="display:flex; gap:5px"><button class="tool" id="undoBtn">Undo</button><button class="tool" id="redoBtn">Redo</button></div>
       <div id="palette"></div>
       <div style="display:flex; gap:4px">
@@ -335,47 +335,9 @@
     const x = Math.floor((cx - rect.left) / (rect.width / GRID_SIZE));
     const y = Math.floor((cy - rect.top) / (rect.height / GRID_SIZE));
     if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) return;
-    if (tool === 'fill') {
-      floodFill(x, y, grid[y][x], currentColor);
-      isDown = false;
-    } else {
-      const c = (tool === 'brush' ? currentColor : '#FFFFFF');
-      if (lastX !== null) drawLine(lastX, lastY, x, y, c); else setPx(x, y, c);
-      lastX = x; lastY = y;
-    }
-  }
-  function floodFill(x, y, targetColor, fillColor) {
-    if (targetColor === fillColor) return;
-    const pixels = [];
-    const visited = new Uint8Array(GRID_SIZE * GRID_SIZE);
-    const stack = [y * GRID_SIZE + x];
-    visited[y * GRID_SIZE + x] = 1;
-    while (stack.length) {
-      const idx = stack.pop();
-      const cy = (idx / GRID_SIZE) | 0;
-      const cx = idx % GRID_SIZE;
-      if (grid[cy][cx] !== targetColor) continue;
-      grid[cy][cx] = fillColor;
-      pixels.push({x: cx, y: cy, c: fillColor});
-      const neighbors = [
-        cy > 0          ? (cy - 1) * GRID_SIZE + cx : -1,
-        cy < GRID_SIZE-1  ? (cy + 1) * GRID_SIZE + cx : -1,
-        cx > 0          ?  cy     * GRID_SIZE + cx - 1 : -1,
-        cx < GRID_SIZE-1  ?  cy     * GRID_SIZE + cx + 1 : -1,
-      ];
-      for (let i = 0; i < 4; i++) {
-        const n = neighbors[i];
-        if (n !== -1 && !visited[n]) {
-          visited[n] = 1;
-          stack.push(n);
-        }
-      }
-    }
-    if (!pixels.length) return;
-    for (let i = 0; i < pixels.length; i++) {
-      drawPx(pixels[i].x, pixels[i].y, pixels[i].c);
-    }
-    broadcast({type: 'batch', pixels});
+    const c = (tool === 'brush' ? currentColor : '#FFFFFF');
+    if (lastX !== null) drawLine(lastX, lastY, x, y, c); else setPx(x, y, c);
+    lastX = x; lastY = y;
   }
   document.getElementById('wipeBtn').onclick = () => {
     if (!confirm('Wipe all?')) return;
@@ -408,11 +370,16 @@
   function setTool(t) {
     tool = t;
     document.querySelectorAll('.tool').forEach(b => b.classList.remove('active'));
-    document.getElementById(t === 'brush' ? 'brushBtn' : t === 'eraser' ? 'eraserBtn' : 'fillBtn').classList.add('active');
+    document.getElementById(t === 'brush' ? 'brushBtn' : 'eraserBtn').classList.add('active');
   }
   document.getElementById('brushBtn').onclick  = () => setTool('brush');
   document.getElementById('eraserBtn').onclick = () => setTool('eraser');
-  document.getElementById('fillBtn').onclick   = () => setTool('fill');
+  document.getElementById('fillBtn').onclick   = () => {
+    history.push(JSON.stringify(grid));
+    redoStack = [];
+    applyWipe(GRID_SIZE);
+    broadcast({type: 'wipe', size: GRID_SIZE});
+  };
   document.getElementById('undoBtn').onclick = () => {
     if (!history.length) return;
     redoStack.push(JSON.stringify(grid));
