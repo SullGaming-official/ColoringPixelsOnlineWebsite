@@ -4,7 +4,7 @@
 <link rel="icon" type="image/png" href="favicon.png">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-<title>ColoringPixelsOnline</title>
+<title>AColoringPixelsOnline</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{--accent:#3D2CDE;--bg:#1a1a1a;--sidebar-w:260px;--muted:#6b7280}
@@ -214,6 +214,16 @@
     channel.on('presence', { event: 'sync' }, () => {
       const count = Object.keys(channel.presenceState()).length;
       document.getElementById('status').innerText = 'Peers: ' + (count > 0 ? count - 1 : 0);
+    });
+    channel.on('presence', { event: 'join' }, ({ newPresences }) => {
+      // Only the oldest peer (lowest join timestamp) sends the canvas to the new joiner
+      const state = channel.presenceState();
+      const allKeys = Object.keys(state);
+      const myKey = allKeys.find(k => state[k].some(p => p.user === currentUser.id));
+      const sorted = allKeys.slice().sort();
+      if (sorted[0] === myKey) {
+        broadcast('full', { grid, size: GRID_SIZE });
+      }
     });
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
