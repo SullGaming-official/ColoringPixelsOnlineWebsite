@@ -4,9 +4,8 @@
 <link rel="icon" type="image/png" href="favicon.png">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-<title>AColoringPixelsOnline</title>
+<title>ColoringPixelsOnline</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <style>
   :root{--accent:#3D2CDE;--bg:#1a1a1a;--sidebar-w:260px;--muted:#6b7280}
   body, html { margin:0; padding:0; height:100%; width:100%; font-family:Inter,system-ui,Arial; background:var(--bg); color:white; overflow:hidden; touch-action:none; }
@@ -117,11 +116,11 @@
   const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   const LOBBY_STORAGE_KEY = 'cp_pending_lobby';
   let currentUser = null;
-  let peer, lobbyID, connections = {};
+  let channel, lobbyID;
   let GRID_SIZE = 64;
   let grid = Array.from({length:GRID_SIZE},()=>Array(GRID_SIZE).fill('#FFFFFF'));
   let history = [], redoStack = [], tool = 'brush', currentColor = '#000000', isDown = false;
-  let isHost = false, lastX = null, lastY = null;
+  let appStarted = false, lastX = null, lastY = null;
   const canvas = document.getElementById('canvas'), ctx = canvas.getContext('2d');
   let authMode = 'login';
   function showTab(mode) {
@@ -187,7 +186,6 @@
     await sb.auth.signOut();
     location.reload();
   }
-  let appStarted = false;
   function startApp(email) {
     if (appStarted) return;
     appStarted = true;
@@ -195,65 +193,32 @@
     document.getElementById('mainApp').style.display = 'flex';
     document.getElementById('accountName').innerText = email;
     document.getElementById('lobbyLabel').innerText = 'Lobby: ' + lobbyID;
-    initMultiplayer(email);
+    initMultiplayer();
   }
-  let myPeerID = null;
-  function initMultiplayer(email) {
-    const safeEmail = email.replace(/[^a-zA-Z0-9]/g, '_');
-    const masterID = 'CP_HOST_' + lobbyID;
-    myPeerID = 'CP_PEER_' + lobbyID + '_' + safeEmail + '_' + Math.floor(Math.random()*999);
-    const peerCfg = { config: { iceServers: [{ url: 'stun:stun.l.google.com:19302' }] } };
-    const masterPeer = new Peer(masterID, peerCfg);
-    masterPeer.on('open', () => { isHost = true; });
-    masterPeer.on('connection', conn => setupConnection(conn));
-    masterPeer.on('error', () => {});
-    peer = new Peer(myPeerID, peerCfg);
-    peer.on('connection', conn => setupConnection(conn));
-    peer.on('open', () => {
-      const conn = peer.connect(masterID);
-      if (conn) setupConnection(conn);
-    });
+  function initMultiplayer() {
     canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
     autoFit(); render();
     window.addEventListener('resize', autoFit);
-  }
-  function setupConnection(conn) {
-    if (!conn) return;
-    conn.on('open', () => {
-      if (connections[conn.peer]) return;
-      connections[conn.peer] = conn;
-      updatePeerCountUI();
-      if (isHost) {
-        conn.send({type:'full', grid, size: GRID_SIZE});
-        broadcastCount();
-      } else if (conn.peer.includes('HOST')) {
-        conn.send({type:'sync_req'});
+    channel = sb.channel('lobby:' + lobbyID, { config: { broadcast: { self: false } } });
+    channel.on('broadcast', { event: 'batch' }, ({ payload }) => {
+      payload.pixels.forEach(p => {
+        if (grid[p.y][p.x] !== p.c) { grid[p.y][p.x] = p.c; drawPx(p.x, p.y, p.c); }
+      });
+    });
+    channel.on('broadcast', { event: 'full' }, ({ payload }) => {
+      applyFullState(payload.grid, payload.size || 64);
+    });
+    channel.on('broadcast', { event: 'wipe' }, ({ payload }) => {
+      applyWipe(payload.size || GRID_SIZE);
+    });
+    channel.on('presence', { event: 'sync' }, () => {
+      const count = Object.keys(channel.presenceState()).length;
+      document.getElementById('status').innerText = 'Peers: ' + (count > 0 ? count - 1 : 0);
+    });
+    channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        await channel.track({ user: currentUser.id });
       }
-    });
-    conn.on('data', data => {
-      if (data.type === 'batch') {
-        let changed = false;
-        data.pixels.forEach(p => {
-          if (grid[p.y][p.x] !== p.c) {
-            grid[p.y][p.x] = p.c;
-            drawPx(p.x, p.y, p.c);
-            changed = true;
-          }
-        });
-        if (isHost && changed) broadcastExcept(data, conn.peer);
-      } else if (data.type === 'full') {
-        applyFullState(data.grid, data.size || 64);
-      } else if (data.type === 'sync_req' && isHost) {
-        conn.send({type:'full', grid, size: GRID_SIZE});
-      } else if (data.type === 'wipe') {
-        applyWipe(data.size || GRID_SIZE);
-        if (isHost) broadcastExcept(data, conn.peer);
-      } else if (data.type === 'count_update') updatePeerCountUI(data.count);
-    });
-    conn.on('close', () => {
-      delete connections[conn.peer];
-      if (isHost) broadcastCount();
-      updatePeerCountUI();
     });
   }
   function applyFullState(newGrid, newSize) {
@@ -281,26 +246,12 @@
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, GRID_SIZE, GRID_SIZE);
   }
-  function countUsers() {
-    const seen = new Set();
-    for (let id in connections) {
-      if (id.startsWith('CP_HOST_')) continue;
-      const key = id.replace(/_[0-9]+$/, '');
-      seen.add(key);
-    }
-    return seen.size;
-  }
-  function broadcastCount() { broadcast({type:'count_update', count: countUsers()}); }
-  function updatePeerCountUI(ov) {
-    const c = (ov !== undefined) ? ov : countUsers();
-    document.getElementById('status').innerText = 'Peers: ' + c;
-  }
   document.getElementById('sizeRange').onchange = (e) => {
     if (!confirm('Resizing the grid will wipe the current canvas. Continue?')) { e.target.value = GRID_SIZE; return; }
     const newSize = parseInt(e.target.value);
     document.getElementById('sizeLabel').innerText = newSize + ' x ' + newSize;
     applyWipe(newSize);
-    broadcast({type:'full', grid, size: GRID_SIZE});
+    broadcast('full', {grid, size: GRID_SIZE});
   };
   let pixelBatch = [];
   let batchTimer = null;
@@ -311,7 +262,7 @@
     pixelBatch.push({x, y, c});
     if (!batchTimer) {
       batchTimer = setTimeout(() => {
-        if (pixelBatch.length) broadcast({type:'batch', pixels: pixelBatch});
+        if (pixelBatch.length) broadcast('batch', {pixels: pixelBatch});
         pixelBatch = [];
         batchTimer = null;
       }, 0);
@@ -372,17 +323,18 @@
     }
     if (!pixels.length) return;
     for (let i = 0; i < pixels.length; i++) drawPx(pixels[i].x, pixels[i].y, pixels[i].c);
-    broadcast({type: 'batch', pixels});
+    broadcast('batch', {pixels});
   }
   document.getElementById('wipeBtn').onclick = () => {
     if (!confirm('Wipe all?')) return;
     history.push(JSON.stringify(grid));
     redoStack = [];
     applyWipe(GRID_SIZE);
-    broadcast({type: 'wipe', size: GRID_SIZE});
+    broadcast('wipe', {size: GRID_SIZE});
   };
-  function broadcast(m) { for (let id in connections) if (connections[id].open) connections[id].send(m); }
-  function broadcastExcept(m, s) { for (let id in connections) if (id !== s && connections[id].open) connections[id].send(m); }
+  function broadcast(event, payload) {
+    if (channel) channel.send({ type: 'broadcast', event, payload });
+  }
   function drawPx(x, y, c) {
     grid[y][x] = c;
     ctx.fillStyle = c;
@@ -415,14 +367,14 @@
     redoStack.push(JSON.stringify(grid));
     grid = JSON.parse(history.pop());
     render();
-    broadcast({type:'full', grid, size: GRID_SIZE});
+    broadcast('full', {grid, size: GRID_SIZE});
   };
   document.getElementById('redoBtn').onclick = () => {
     if (!redoStack.length) return;
     history.push(JSON.stringify(grid));
     grid = JSON.parse(redoStack.pop());
     render();
-    broadcast({type:'full', grid, size: GRID_SIZE});
+    broadcast('full', {grid, size: GRID_SIZE});
   };
   document.getElementById('exportBtn').onclick = () => {
     const a = document.createElement('a');
@@ -468,7 +420,7 @@
     const { data, error } = await sb.from('saves').select('data').eq('user_id', currentUser.id).eq('name', name).single();
     if (error || !data) return alert('Failed to load.');
     applyFullState(data.data.grid, data.data.size);
-    broadcast({type:'full', grid, size: GRID_SIZE});
+    broadcast('full', {grid, size: GRID_SIZE});
     document.getElementById('saveMenu').style.display = 'none';
   };
   window.deleteSave = async (name) => {
