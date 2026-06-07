@@ -4,7 +4,7 @@
 <link rel="icon" type="image/png" href="favicon.png">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-<title>ColoringPixelsOnline</title>
+<title>AColoringPixelsOnline</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <style>
@@ -486,9 +486,18 @@
     };
     document.getElementById('palette').appendChild(s);
   });
-  canvas.onmousedown = (e) => { isDown = true; paint(e); };
-  canvas.ontouchstart = (e) => { e.preventDefault(); isDown = true; paint(e); };
-  function endStroke() { if (isDown) { history.push(JSON.stringify(grid)); redoStack = []; } isDown = false; lastX = lastY = null; }
+  let preStrokeSnapshot = null;
+  canvas.onmousedown = (e) => { preStrokeSnapshot = JSON.stringify(grid); isDown = true; paint(e); };
+  canvas.ontouchstart = (e) => { e.preventDefault(); preStrokeSnapshot = JSON.stringify(grid); isDown = true; paint(e); };
+  function endStroke() {
+    if (isDown && preStrokeSnapshot !== null && preStrokeSnapshot !== JSON.stringify(grid)) {
+      history.push(preStrokeSnapshot);
+      redoStack = [];
+    }
+    preStrokeSnapshot = null;
+    isDown = false;
+    lastX = lastY = null;
+  }
   window.onmouseup = endStroke;
   window.ontouchend = endStroke;
   canvas.onmousemove = paint;
