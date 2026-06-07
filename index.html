@@ -4,7 +4,7 @@
 <link rel="icon" type="image/png" href="favicon.png">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-<title>AColoringPixelsOnline</title>
+<title>ColoringPixelsOnline</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{--accent:#3D2CDE;--bg:#1a1a1a;--sidebar-w:260px;--muted:#6b7280}
@@ -215,14 +215,25 @@
       const count = Object.keys(channel.presenceState()).length;
       document.getElementById('status').innerText = 'Peers: ' + (count > 0 ? count - 1 : 0);
     });
-    channel.on('presence', { event: 'join' }, ({ newPresences }) => {
-      // Only the oldest peer (lowest join timestamp) sends the canvas to the new joiner
+    channel.on('broadcast', { event: 'sync_req' }, () => {
+      // Only the oldest peer responds with the current canvas
       const state = channel.presenceState();
       const allKeys = Object.keys(state);
       const myKey = allKeys.find(k => state[k].some(p => p.user === currentUser.id));
       const sorted = allKeys.slice().sort();
       if (sorted[0] === myKey) {
-        broadcast('full', { grid, size: GRID_SIZE });
+        broadcast('sync_res', { grid, size: GRID_SIZE });
+      }
+    });
+    channel.on('broadcast', { event: 'sync_res' }, ({ payload }) => {
+      // Only apply if we haven't drawn anything yet (blank canvas)
+      const isBlank = grid.every(row => row.every(c => c === '#FFFFFF'));
+      if (isBlank) applyFullState(payload.grid, payload.size || 64);
+    });
+    channel.on('presence', { event: 'join' }, ({ newPresences }) => {
+      // If I just joined, request the current state
+      if (newPresences.some(p => p.user === currentUser.id)) {
+        setTimeout(() => broadcast('sync_req', {}), 200);
       }
     });
     channel.subscribe(async (status) => {
