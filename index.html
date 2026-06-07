@@ -4,7 +4,7 @@
 <link rel="icon" type="image/png" href="favicon.png">
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-<title>ColoringPixelsOnline</title>
+<title>AColoringPixelsOnline</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{--accent:#3D2CDE;--bg:#1a1a1a;--sidebar-w:260px;--muted:#6b7280}
@@ -167,19 +167,28 @@
   document.getElementById('authBtn').onclick = async () => {
     const email = document.getElementById('emailIn').value.trim();
     const pass = document.getElementById('passIn').value;
-    lobbyID = (document.getElementById('lobbyIn').value || 'GLOBAL').trim().toUpperCase();
+    const lobbyVal = (document.getElementById('lobbyIn').value || 'GLOBAL').trim().toUpperCase();
     if (!email || !pass) return showError('Email and password required.');
     document.getElementById('authBtn').textContent = '...';
+    // Store lobby in localStorage BEFORE signing in so onAuthStateChange picks it up
+    localStorage.setItem(LOBBY_STORAGE_KEY, lobbyVal);
     if (authMode === 'signup') {
       const { error } = await sb.auth.signUp({ email, password: pass });
-      if (error) { showError(error.message); showTab('signup'); return; }
+      if (error) {
+        localStorage.removeItem(LOBBY_STORAGE_KEY);
+        showError(error.message); showTab('signup'); return;
+      }
+      localStorage.removeItem(LOBBY_STORAGE_KEY);
       showError('Check your email to confirm your account, then log in.');
       showTab('login');
     } else {
       const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
-      if (error) { showError(error.message); showTab('login'); return; }
+      if (error) {
+        localStorage.removeItem(LOBBY_STORAGE_KEY);
+        showError(error.message); showTab('login'); return;
+      }
       currentUser = data.user;
-      startApp(email);
+      // onAuthStateChange will fire and call startApp with the correct lobbyID
     }
   };
   async function logout() {
@@ -216,7 +225,6 @@
       document.getElementById('status').innerText = 'Peers: ' + (count > 0 ? count - 1 : 0);
     });
     channel.on('broadcast', { event: 'sync_req' }, () => {
-      // Only the oldest peer responds with the current canvas
       const state = channel.presenceState();
       const allKeys = Object.keys(state);
       const myKey = allKeys.find(k => state[k].some(p => p.user === currentUser.id));
@@ -226,12 +234,10 @@
       }
     });
     channel.on('broadcast', { event: 'sync_res' }, ({ payload }) => {
-      // Only apply if we haven't drawn anything yet (blank canvas)
       const isBlank = grid.every(row => row.every(c => c === '#FFFFFF'));
       if (isBlank) applyFullState(payload.grid, payload.size || 64);
     });
     channel.on('presence', { event: 'join' }, ({ newPresences }) => {
-      // If I just joined, request the current state
       if (newPresences.some(p => p.user === currentUser.id)) {
         setTimeout(() => broadcast('sync_req', {}), 200);
       }
