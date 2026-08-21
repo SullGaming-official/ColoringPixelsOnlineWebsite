@@ -5,7 +5,12 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
 <title>ColoringPixelsOnline</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<!-- Firebase SDKs (Compatibility Layer for Browser HTML) -->
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
 <style>
   :root{--accent:#3D2CDE;--bg:#1a1a1a;--sidebar-w:260px;--muted:#6b7280}
   body, html { margin:0; padding:0; height:100%; width:100%; font-family:Inter,system-ui,Arial; background:var(--bg); color:white; overflow:hidden; touch-action:none; }
@@ -110,19 +115,32 @@
   <div id="slotList" style="max-height:300px; overflow-y:auto; margin:10px 0; border-top:1px solid #eee;"></div>
   <button id="exitSaveMenuBtn" class="tool" style="background:#666; margin-top:10px;">Close Menu</button>
 </div>
+
 <script>
-  const SUPABASE_URL = 'https://wkjxmmjcdknjwvvbmnkp.supabase.co';
-  const SUPABASE_KEY = 'sb_publishable_t4lLSlKfleiGVWtN7chPxA_QD2anmwU';
-  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  const firebaseConfig = {
+    apiKey: "AIzaSyA3_FLPC31HnglhLnxnTravEkdIvwHmUtk",
+    authDomain: "sg-cpo.firebaseapp.com",
+    projectId: "sg-cpo",
+    storageBucket: "sg-cpo.firebasestorage.app",
+    messagingSenderId: "3647135056",
+    appId: "1:3647135056:web:a842f0d94462e4862fe055",
+    measurementId: "G-64SGK44J2Z"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+
   const LOBBY_STORAGE_KEY = 'cp_pending_lobby';
   let currentUser = null;
-  let channel, lobbyID;
+  let lobbyID;
   let GRID_SIZE = 64;
   let grid = Array.from({length:GRID_SIZE},()=>Array(GRID_SIZE).fill('#FFFFFF'));
   let history = [], redoStack = [], tool = 'brush', currentColor = '#000000', isDown = false;
   let appStarted = false, lastX = null, lastY = null;
   const canvas = document.getElementById('canvas'), ctx = canvas.getContext('2d');
   let authMode = 'login';
+
   function showTab(mode) {
     authMode = mode;
     document.getElementById('tabLogin').classList.toggle('active', mode === 'login');
@@ -130,71 +148,72 @@
     document.getElementById('authBtn').textContent = mode === 'login' ? 'Login' : 'Create Account';
     document.getElementById('authError').style.display = 'none';
   }
+
   function showError(msg) {
     const el = document.getElementById('authError');
     el.textContent = msg;
     el.style.display = 'block';
   }
+
   document.getElementById('googleBtn').onclick = () => {
     document.getElementById('googleLobbyIn').value = '';
     document.getElementById('googleLobbyModal').style.display = 'flex';
     document.getElementById('googleLobbyIn').focus();
   };
+
   async function doGoogleSignIn() {
     const lobbyVal = (document.getElementById('googleLobbyIn').value || 'GLOBAL').trim().toUpperCase();
     localStorage.setItem(LOBBY_STORAGE_KEY, lobbyVal);
     document.getElementById('googleLobbyModal').style.display = 'none';
-    const { error } = await sb.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.origin + window.location.pathname }
-    });
-    if (error) showError(error.message);
+    
+    const provider = new firebase.auth.GoogleAuthProvider();
+    try {
+      await auth.signInWithPopup(provider);
+    } catch (error) {
+      showError(error.message);
+    }
   }
+
   document.getElementById('googleLobbyNextBtn').onclick = doGoogleSignIn;
   document.getElementById('googleLobbyIn').onkeydown = (e) => { if (e.key === 'Enter') doGoogleSignIn(); };
-  sb.auth.onAuthStateChange(async (event, session) => {
-    if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session && !currentUser) {
-      currentUser = session.user;
+
+  auth.onAuthStateChanged(user => {
+    if (user && !currentUser) {
+      currentUser = user;
       const savedLobby = localStorage.getItem(LOBBY_STORAGE_KEY);
       localStorage.removeItem(LOBBY_STORAGE_KEY);
       lobbyID = (savedLobby && savedLobby !== '') ? savedLobby : 'GLOBAL';
-      if (window.location.hash && window.location.hash.includes('access_token')) {
-        window.history.replaceState(null, '', window.location.pathname);
-      }
-      startApp(session.user.email);
+      startApp(user.email);
     }
   });
+
   document.getElementById('authBtn').onclick = async () => {
     const email = document.getElementById('emailIn').value.trim();
     const pass = document.getElementById('passIn').value;
     const lobbyVal = (document.getElementById('lobbyIn').value || 'GLOBAL').trim().toUpperCase();
+    
     if (!email || !pass) return showError('Email and password required.');
     document.getElementById('authBtn').textContent = '...';
-    // Store lobby in localStorage BEFORE signing in so onAuthStateChange picks it up
     localStorage.setItem(LOBBY_STORAGE_KEY, lobbyVal);
-    if (authMode === 'signup') {
-      const { error } = await sb.auth.signUp({ email, password: pass });
-      if (error) {
-        localStorage.removeItem(LOBBY_STORAGE_KEY);
-        showError(error.message); showTab('signup'); return;
+
+    try {
+      if (authMode === 'signup') {
+        await auth.createUserWithEmailAndPassword(email, pass);
+      } else {
+        await auth.signInWithEmailAndPassword(email, pass);
       }
+    } catch (error) {
       localStorage.removeItem(LOBBY_STORAGE_KEY);
-      showError('Check your email to confirm your account, then log in.');
-      showTab('login');
-    } else {
-      const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
-      if (error) {
-        localStorage.removeItem(LOBBY_STORAGE_KEY);
-        showError(error.message); showTab('login'); return;
-      }
-      currentUser = data.user;
-      // onAuthStateChange will fire and call startApp with the correct lobbyID
+      showError(error.message);
+      document.getElementById('authBtn').textContent = authMode === 'login' ? 'Login' : 'Create Account';
     }
   };
+
   async function logout() {
-    await sb.auth.signOut();
+    await auth.signOut();
     location.reload();
   }
+
   function startApp(email) {
     if (appStarted) return;
     appStarted = true;
@@ -202,52 +221,15 @@
     document.getElementById('mainApp').style.display = 'flex';
     document.getElementById('accountName').innerText = email;
     document.getElementById('lobbyLabel').innerText = 'Lobby: ' + lobbyID;
-    initMultiplayer();
+    initCanvas();
   }
-  function initMultiplayer() {
+
+  function initCanvas() {
     canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
     autoFit(); render();
     window.addEventListener('resize', autoFit);
-    channel = sb.channel('lobby:' + lobbyID, { config: { broadcast: { self: false } } });
-    channel.on('broadcast', { event: 'batch' }, ({ payload }) => {
-      payload.pixels.forEach(p => {
-        if (grid[p.y][p.x] !== p.c) { grid[p.y][p.x] = p.c; drawPx(p.x, p.y, p.c); }
-      });
-    });
-    channel.on('broadcast', { event: 'full' }, ({ payload }) => {
-      applyFullState(payload.grid, payload.size || 64);
-    });
-    channel.on('broadcast', { event: 'wipe' }, ({ payload }) => {
-      applyWipe(payload.size || GRID_SIZE);
-    });
-    channel.on('presence', { event: 'sync' }, () => {
-      const count = Object.keys(channel.presenceState()).length;
-      document.getElementById('status').innerText = 'Peers: ' + (count > 0 ? count - 1 : 0);
-    });
-    channel.on('broadcast', { event: 'sync_req' }, () => {
-      const state = channel.presenceState();
-      const allKeys = Object.keys(state);
-      const myKey = allKeys.find(k => state[k].some(p => p.user === currentUser.id));
-      const sorted = allKeys.slice().sort();
-      if (sorted[0] === myKey) {
-        broadcast('sync_res', { grid, size: GRID_SIZE });
-      }
-    });
-    channel.on('broadcast', { event: 'sync_res' }, ({ payload }) => {
-      const isBlank = grid.every(row => row.every(c => c === '#FFFFFF'));
-      if (isBlank) applyFullState(payload.grid, payload.size || 64);
-    });
-    channel.on('presence', { event: 'join' }, ({ newPresences }) => {
-      if (newPresences.some(p => p.user === currentUser.id)) {
-        setTimeout(() => broadcast('sync_req', {}), 200);
-      }
-    });
-    channel.subscribe(async (status) => {
-      if (status === 'SUBSCRIBED') {
-        await channel.track({ user: currentUser.id });
-      }
-    });
   }
+
   function applyFullState(newGrid, newSize) {
     const sizeChanged = newSize !== GRID_SIZE;
     GRID_SIZE = newSize;
@@ -261,6 +243,7 @@
     document.getElementById('sizeLabel').innerText = GRID_SIZE + ' x ' + GRID_SIZE;
     render();
   }
+
   function applyWipe(newSize) {
     const sizeChanged = newSize !== GRID_SIZE;
     GRID_SIZE = newSize;
@@ -273,28 +256,20 @@
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, GRID_SIZE, GRID_SIZE);
   }
+
   document.getElementById('sizeRange').onchange = (e) => {
     if (!confirm('Resizing the grid will wipe the current canvas. Continue?')) { e.target.value = GRID_SIZE; return; }
     const newSize = parseInt(e.target.value);
     document.getElementById('sizeLabel').innerText = newSize + ' x ' + newSize;
     applyWipe(newSize);
-    broadcast('full', {grid, size: GRID_SIZE});
   };
-  let pixelBatch = [];
-  let batchTimer = null;
+
   function setPx(x, y, c) {
     if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE || grid[y][x] === c) return;
     grid[y][x] = c;
     drawPx(x, y, c);
-    pixelBatch.push({x, y, c});
-    if (!batchTimer) {
-      batchTimer = setTimeout(() => {
-        if (pixelBatch.length) broadcast('batch', {pixels: pixelBatch});
-        pixelBatch = [];
-        batchTimer = null;
-      }, 0);
-    }
   }
+
   function drawLine(x0, y0, x1, y1, c) {
     const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
     const sx = (x0 < x1) ? 1 : -1, sy = (y0 < y1) ? 1 : -1;
@@ -307,6 +282,7 @@
       if (e2 < dx)  { err += dx; y0 += sy; }
     }
   }
+
   function paint(e) {
     if (!isDown) return;
     const rect = canvas.getBoundingClientRect();
@@ -324,6 +300,7 @@
       lastX = x; lastY = y;
     }
   }
+
   function floodFill(x, y, targetColor, fillColor) {
     if (targetColor === fillColor) return;
     const pixels = [];
@@ -350,23 +327,21 @@
     }
     if (!pixels.length) return;
     for (let i = 0; i < pixels.length; i++) drawPx(pixels[i].x, pixels[i].y, pixels[i].c);
-    broadcast('batch', {pixels});
   }
+
   document.getElementById('wipeBtn').onclick = () => {
     if (!confirm('Wipe all?')) return;
     history.push(JSON.stringify(grid));
     redoStack = [];
     applyWipe(GRID_SIZE);
-    broadcast('wipe', {size: GRID_SIZE});
   };
-  function broadcast(event, payload) {
-    if (channel) channel.send({ type: 'broadcast', event, payload });
-  }
+
   function drawPx(x, y, c) {
     grid[y][x] = c;
     ctx.fillStyle = c;
     ctx.fillRect(x, y, 1, 1);
   }
+
   function render() {
     for (let y = 0; y < GRID_SIZE; y++) {
       for (let x = 0; x < GRID_SIZE; x++) {
@@ -375,86 +350,142 @@
       }
     }
   }
+
   function autoFit() {
     const wrap = document.getElementById('canvasWrap').getBoundingClientRect();
     const s = Math.min(wrap.width * 0.96, wrap.height * 0.96);
     canvas.style.width = s + 'px';
     canvas.style.height = s + 'px';
   }
+
   function setTool(t) {
     tool = t;
     document.querySelectorAll('.tool').forEach(b => b.classList.remove('active'));
     document.getElementById(t === 'brush' ? 'brushBtn' : t === 'eraser' ? 'eraserBtn' : 'fillBtn').classList.add('active');
   }
+
   document.getElementById('brushBtn').onclick  = () => setTool('brush');
   document.getElementById('eraserBtn').onclick = () => setTool('eraser');
   document.getElementById('fillBtn').onclick   = () => setTool('fill');
+
   document.getElementById('undoBtn').onclick = () => {
     if (!history.length) return;
     redoStack.push(JSON.stringify(grid));
     grid = JSON.parse(history.pop());
     render();
-    broadcast('full', {grid, size: GRID_SIZE});
   };
+
   document.getElementById('redoBtn').onclick = () => {
     if (!redoStack.length) return;
     history.push(JSON.stringify(grid));
     grid = JSON.parse(redoStack.pop());
     render();
-    broadcast('full', {grid, size: GRID_SIZE});
   };
+
   document.getElementById('exportBtn').onclick = () => {
     const a = document.createElement('a');
     a.download = 'art.png';
     a.href = canvas.toDataURL();
     a.click();
   };
+
   document.getElementById('picker').oninput = (e) => {
     currentColor = e.target.value;
     document.getElementById('hexInput').value = currentColor;
   };
+
   document.getElementById('openSaveMenuBtn').onclick = () => {
     document.getElementById('saveMenu').style.display = 'block';
     refreshSaveList();
   };
+
   document.getElementById('exitSaveMenuBtn').onclick = () => document.getElementById('saveMenu').style.display = 'none';
+
   document.getElementById('menuSaveBtn').onclick = async () => {
     const name = document.getElementById('menuSaveName').value.trim() || 'My Drawing';
-    const { error } = await sb.from('saves').upsert({ user_id: currentUser.id, name, data: { grid, size: GRID_SIZE } }, { onConflict: 'user_id,name' });
-    if (error) return alert('Save failed: ' + error.message);
-    alert('Saved!');
-    document.getElementById('menuSaveName').value = '';
-    refreshSaveList();
+    try {
+      const docId = `${currentUser.uid}_${name}`;
+      const flatGrid = grid.flat();
+      const imagePreview = canvas.toDataURL('image/png');
+
+      await db.collection('saves').doc(docId).set({
+        user_id: currentUser.uid,
+        name: name,
+        image: imagePreview,
+        data: { grid: flatGrid, size: GRID_SIZE }
+      });
+
+      alert('Saved!');
+      document.getElementById('menuSaveName').value = '';
+      refreshSaveList();
+    } catch (error) {
+      alert('Save failed: ' + error.message);
+    }
   };
+
   async function refreshSaveList() {
     const list = document.getElementById('slotList');
     list.innerHTML = '<i style="color:#999; padding:10px; display:block;">Loading...</i>';
-    const { data, error } = await sb.from('saves').select('name').eq('user_id', currentUser.id).order('name');
-    if (error) { list.innerHTML = '<i style="color:red">Failed to load saves.</i>'; return; }
-    if (!data.length) { list.innerHTML = '<i style="color:#999; padding:10px; display:block;">No saves yet.</i>'; return; }
-    list.innerHTML = '';
-    data.forEach(row => {
-      const div = document.createElement('div');
-      div.className = 'save-slot';
-      div.innerHTML = `<strong>${row.name}</strong><div>
-        <button class="load-btn" onclick="loadSave('${row.name}')">Load</button>
-        <button class="del-btn" onclick="deleteSave('${row.name}')">Delete</button>
-      </div>`;
-      list.appendChild(div);
-    });
+    try {
+      const snapshot = await db.collection('saves').where('user_id', '==', currentUser.uid).get();
+      if (snapshot.empty) {
+        list.innerHTML = '<i style="color:#999; padding:10px; display:block;">No saves yet.</i>';
+        return;
+      }
+      list.innerHTML = '';
+      snapshot.forEach(doc => {
+        const row = doc.data();
+        const div = document.createElement('div');
+        div.className = 'save-slot';
+        
+        const thumbnailHtml = row.image 
+          ? `<img src="${row.image}" style="width:32px; height:32px; border:1px solid #ccc; image-rendering:pixelated; border-radius:4px;">` 
+          : '';
+
+        div.innerHTML = `
+          <div style="display:flex; align-items:center; gap:10px;">
+            ${thumbnailHtml}
+            <strong>${row.name}</strong>
+          </div>
+          <div>
+            <button class="load-btn" onclick="loadSave('${row.name}')">Load</button>
+            <button class="del-btn" onclick="deleteSave('${row.name}')">Delete</button>
+          </div>`;
+        list.appendChild(div);
+      });
+    } catch (err) {
+      list.innerHTML = '<i style="color:red">Failed to load saves.</i>';
+    }
   }
+
   window.loadSave = async (name) => {
-    const { data, error } = await sb.from('saves').select('data').eq('user_id', currentUser.id).eq('name', name).single();
-    if (error || !data) return alert('Failed to load.');
-    applyFullState(data.data.grid, data.data.size);
-    broadcast('full', {grid, size: GRID_SIZE});
-    document.getElementById('saveMenu').style.display = 'none';
+    try {
+      const docId = `${currentUser.uid}_${name}`;
+      const doc = await db.collection('saves').doc(docId).get();
+      if (!doc.exists) return alert('Failed to load.');
+      const data = doc.data().data;
+      const size = data.size;
+      const flatGrid = data.grid;
+
+      const restoredGrid = [];
+      for (let i = 0; i < size; i++) {
+        restoredGrid.push(flatGrid.slice(i * size, (i + 1) * size));
+      }
+
+      applyFullState(restoredGrid, size);
+      document.getElementById('saveMenu').style.display = 'none';
+    } catch (err) {
+      alert('Failed to load.');
+    }
   };
+
   window.deleteSave = async (name) => {
     if (!confirm(`Delete "${name}"?`)) return;
-    await sb.from('saves').delete().eq('user_id', currentUser.id).eq('name', name);
+    const docId = `${currentUser.uid}_${name}`;
+    await db.collection('saves').doc(docId).delete();
     refreshSaveList();
   };
+
   const colors = ["#D20103","#FF0000","#FF8484","#EC8E01","#FFA500","#FFDC9A","#E2C44B","#FFFF00","#FFFFAE","#226308","#008000","#00FF00","#2227C3","#0000DD","#ADD8E6","#621079","#800080","#CC6CE7","#DCADB6","#FFC0CB","#FFF0F3","#A07D45","#C8A165","#EFD9B8","#FFFFFF","#D3D3D3","#808080","#5F5E5E","#000000"];
   colors.forEach(c => {
     const s = document.createElement('div');
@@ -467,9 +498,11 @@
     };
     document.getElementById('palette').appendChild(s);
   });
+
   let preStrokeSnapshot = null;
   canvas.onmousedown = (e) => { preStrokeSnapshot = JSON.stringify(grid); isDown = true; paint(e); };
   canvas.ontouchstart = (e) => { e.preventDefault(); preStrokeSnapshot = JSON.stringify(grid); isDown = true; paint(e); };
+
   function endStroke() {
     if (isDown && preStrokeSnapshot !== null && preStrokeSnapshot !== JSON.stringify(grid)) {
       history.push(preStrokeSnapshot);
@@ -479,6 +512,7 @@
     isDown = false;
     lastX = lastY = null;
   }
+
   window.onmouseup = endStroke;
   window.ontouchend = endStroke;
   canvas.onmousemove = paint;
