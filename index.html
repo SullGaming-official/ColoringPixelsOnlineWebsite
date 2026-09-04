@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
 <title>ColoringPixelsOnline</title>
 
-<!-- Firebase SDKs (Compatibility Layer for Browser HTML) -->
+<!-- Firebase SDKs -->
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
@@ -23,6 +23,9 @@
   input, button { padding:12px; border-radius:6px; border:1px solid #444; font-size:14px; background:#333; color:white; width:100%; box-sizing:border-box; }
   button { background:var(--accent); border:none; font-weight:bold; cursor:pointer; }
   #authError { color:#f87171; font-size:12px; text-align:center; display:none; }
+  .auth-footer { text-align:center; font-size:11px; color:var(--muted); margin-top:4px; display:flex; justify-content:center; gap:10px; }
+  .auth-footer a { color:var(--muted); text-decoration:underline; }
+  .auth-footer a:hover { color:white; }
   #nav { height:50px; background:var(--accent); display:flex; align-items:center; justify-content:space-between; padding:0 15px; border-bottom:1px solid rgba(0,0,0,0.1); font-size:13px; font-weight:bold; }
   #mainApp { display:none; height:100%; width:100%; flex-direction:column; }
   #layout { flex:1; display:flex; position:relative; overflow:hidden; }
@@ -33,15 +36,28 @@
   .tool.active { background:var(--accent); border-color:white; }
   #palette { display:grid; grid-template-columns:repeat(5, 1fr); gap:6px; margin:10px 0; }
   .swatch { aspect-ratio:1; border-radius:4px; border:1px solid rgba(0,0,0,0.3); cursor:pointer; }
-  input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; margin: 10px 0; }
+
+  /* Normalized Cross-Platform Range Slider Styling */
+  input[type=range] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    background: transparent;
+    margin: 10px 0;
+  }
   input[type=range]:focus { outline: none; }
-  input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 8px; cursor: pointer; background: #444; border-radius: 4px; }
-  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 18px; width: 18px; border-radius: 50%; background: var(--accent); cursor: pointer; margin-top: -5px; }
-  input[type=range]::-moz-range-track { width: 100%; height: 8px; cursor: pointer; background: #444; border-radius: 4px; }
+  input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 8px; cursor: pointer; background: #444; border-radius: 4px; border: none; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; height: 18px; width: 18px; border-radius: 50%; background: var(--accent); cursor: pointer; margin-top: -5px; border: none; }
+  input[type=range]::-moz-range-track { width: 100%; height: 8px; cursor: pointer; background: #444; border-radius: 4px; border: none; }
   input[type=range]::-moz-range-thumb { height: 18px; width: 18px; border-radius: 50%; background: var(--accent); cursor: pointer; border: none; }
-  #saveMenu { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; color:#333; border:3px solid var(--accent); padding:20px; display:none; z-index:11000; width:440px; border-radius:12px; box-shadow:0 10px 50px rgba(0,0,0,0.5); }
+
+  #saveMenu, #chatMenu { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; color:#333; border:3px solid var(--accent); padding:20px; display:none; z-index:11000; width:440px; border-radius:12px; box-shadow:0 10px 50px rgba(0,0,0,0.5); }
   .save-slot { display:flex; justify-content:space-between; align-items:center; padding:10px; border-bottom:1px solid #eee; font-size:14px; color:#333; }
+  .chat-slot { display:flex; justify-content:space-between; align-items:center; padding:8px 10px; border-bottom:1px solid #eee; font-size:14px; color:#333; word-break:break-word; }
+  .chat-slot .msg-content { flex:1; margin-right:8px; }
+  .chat-slot span { font-weight:bold; color:var(--accent); }
   #menuSaveBtn { background: #28a745 !important; color: white !important; border: 1px solid #1e7e34 !important; font-weight: bold; cursor: pointer; }
+  #chatSendBtn { background: #28a745 !important; color: white !important; border: 1px solid #1e7e34 !important; font-weight: bold; cursor: pointer; }
   .load-btn { background: #007bff !important; color: white !important; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
   .del-btn { background: #dc3545 !important; color: white !important; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; margin-left: 5px; }
   @media (max-width: 600px) { #sidebar { display:none; } }
@@ -49,24 +65,21 @@
 </head>
 <body>
 
-<!-- Lobby Modal -->
 <div id="googleLobbyModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:20000; align-items:center; justify-content:center;">
   <div class="auth-box" style="gap:14px;">
     <h2 style="margin:0;">Join a Lobby</h2>
-    <p style="margin:0; font-size:13px; color:#aaa; text-align:center;">Enter a lobby code to join a specific room, or leave blank to join the default lobby.</p>
     <input type="text" id="googleLobbyIn" placeholder="Lobby Name (optional)" style="text-transform:uppercase;">
-    <button id="googleLobbyNextBtn">Next →</button>
-    <button onclick="document.getElementById('googleLobbyModal').style.display='none'" style="background:#444; font-size:12px;">Cancel</button>
+    <button id="googleLobbyNextBtn" type="button">Next →</button>
+    <button onclick="document.getElementById('googleLobbyModal').style.display='none'" style="background:#444; font-size:12px;" type="button">Cancel</button>
   </div>
 </div>
 
-<!-- Warning Modal matching the exact same UI theme -->
 <div id="googleWarningModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:20001; align-items:center; justify-content:center;">
   <div class="auth-box" style="gap:14px;">
     <h2 style="margin:0; color:#f87171;">Account Warning</h2>
-    <p style="margin:0; font-size:13px; color:#ddd; text-align:center; line-height:1.4;">If you have made an Email account with this email it will wipe your data and it is unrecoverable. Would you like to continue?</p>
-    <button id="googleWarningConfirmBtn" style="background:#dc3545;">Continue</button>
-    <button onclick="document.getElementById('googleWarningModal').style.display='none'" style="background:#444; font-size:12px;">Cancel</button>
+    <p style="margin:0; font-size:13px; color:#ddd; text-align:center;">If you have made an Email account with this Email you will no longer be able to sign in with Email. Would you like to continue with Google only?</p>
+    <button id="googleWarningConfirmBtn" style="background:#dc3545;" type="button">Continue</button>
+    <button onclick="document.getElementById('googleWarningModal').style.display='none'" style="background:#444; font-size:12px;" type="button">Cancel</button>
   </div>
 </div>
 
@@ -74,49 +87,46 @@
   <div class="auth-box">
     <h2>ColoringPixels</h2>
     <div class="auth-tab">
-      <button id="tabLogin" class="active" onclick="showTab('login')">Login</button>
-      <button id="tabSignup" onclick="showTab('signup')">Create Account</button>
+      <button id="tabLogin" class="active" onclick="showTab('login')" type="button">Login</button>
+      <button id="tabSignup" onclick="showTab('signup')" type="button">Create Account</button>
     </div>
     
-    <input type="text" id="firstNameIn" placeholder="First Name" style="display:none;">
-    <input type="email" id="emailIn" placeholder="Email">
-    
-    <div style="position:relative; display:flex; align-items:center;">
-      <input type="password" id="passIn" placeholder="Password" style="width:100%; padding-right:40px; box-sizing:border-box;">
-      <span id="togglePassBtn" style="position:absolute; right:10px; cursor:pointer; color:#888; font-size:16px; user-select:none;" title="Show Password">✖</span>
-    </div>
+    <form id="authForm" onsubmit="return false;" style="display:flex; flex-direction:column; gap:12px; margin:0;">
+      <input type="text" id="firstNameIn" placeholder="First Name" style="display:none;" autocomplete="given-name">
+      <input type="email" id="emailIn" placeholder="Email" autocomplete="username">
+      <input type="password" id="passIn" placeholder="Password" autocomplete="current-password">
+      <input type="text" id="lobbyIn" placeholder="Lobby Name (optional)">
+      <div id="authError"></div>
+      <button id="authBtn" type="submit">Login</button>
+    </form>
 
-    <input type="text" id="lobbyIn" placeholder="Lobby Name (optional)">
-    <div id="authError"></div>
-    <button id="authBtn">Login</button>
-    <div style="display:flex;align-items:center;gap:8px;margin:4px 0"><hr style="flex:1;border-color:#444"><span style="color:#888;font-size:12px">or</span><hr style="flex:1;border-color:#444"></div>
-    <button id="googleBtn" style="background:#fff;color:#333;display:flex;align-items:center;justify-content:center;gap:10px;font-size:14px;">
-      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/><path fill="none" d="M0 0h48v48H0z"/></svg>
+    <button id="googleBtn" type="button" style="background:#fff;color:#333;display:flex;align-items:center;justify-content:center;gap:10px;">
+      <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.63-.06-1.25-.16-1.84H9v3.49h4.84c-.21 1.12-.86 2.07-1.82 2.71v2.26h2.94c1.72-1.58 2.78-3.9 2.78-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.94-2.26c-.81.54-1.84.86-3.02.86-2.34 0-4.32-1.58-5.03-3.71H.95v2.33C2.43 15.98 5.48 18 9 18z"/><path fill="#FBBC05" d="M3.97 10.75c-.18-.54-.28-1.12-.28-1.75s.1-1.21.28-1.75V4.92H.95C.34 6.14 0 7.52 0 9s.34 2.86.95 4.08l3.02-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.47.89 11.43 0 9 0 5.48 0 2.43 2.02.95 4.92l3.02 2.33c.71-2.13 2.69-3.67 5.03-3.67z"/></svg>
       Sign in with Google
     </button>
-    
-    <!-- Terms & Privacy Links -->
-    <div style="text-align:center; margin-top:6px; font-size:11px; color:#888;">
-      <a href="terms.html" style="color:#aaa; text-decoration:none; margin:0 5px;">Terms of Service</a> • 
-      <a href="privacy.html" style="color:#aaa; text-decoration:none; margin:0 5px;">Privacy Policy</a>
+    <div class="auth-footer">
+      <a href="privacy.html">Privacy Policy</a>
+      <span>•</span>
+      <a href="terms.html">Terms of Use</a>
     </div>
   </div>
 </div>
+
 <div id="mainApp">
   <div id="nav">
     <div>User: <span id="accountName">...</span></div>
     <div id="lobbyLabel">Lobby: ...</div>
-    <div id="status" style="color:#dbeafe">Peers: 0</div>
-    <button onclick="logout()" style="width:auto; padding:5px 10px; font-size:11px">Exit</button>
+    <div id="status" style="color:#dbeafe">Status: Connected</div>
+    <button onclick="logout()" style="width:auto; padding:5px 10px; font-size:11px" type="button">Exit</button>
   </div>
   <div id="layout">
     <div id="canvasWrap"><canvas id="canvas" tabindex="0"></canvas></div>
     <div id="sidebar">
       <div class="label">Tools</div>
-      <button class="tool active" id="brushBtn">Brush</button>
-      <button class="tool" id="eraserBtn">Eraser</button>
-      <button class="tool" id="fillBtn">Flood Fill</button>
-      <div style="display:flex; gap:5px"><button class="tool" id="undoBtn">Undo</button><button class="tool" id="redoBtn">Redo</button></div>
+      <button class="tool active" id="brushBtn" type="button">Brush</button>
+      <button class="tool" id="eraserBtn" type="button">Eraser</button>
+      <button class="tool" id="fillBtn" type="button">Flood Fill</button>
+      <div style="display:flex; gap:5px"><button class="tool" id="undoBtn" type="button">Undo</button><button class="tool" id="redoBtn" type="button">Redo</button></div>
       <div id="palette"></div>
       <div style="display:flex; gap:4px">
         <input type="text" id="hexInput" placeholder="HEX" style="width:60%; padding:8px; font-size:12px">
@@ -125,20 +135,34 @@
       <div class="label">Grid Size</div>
       <input type="range" id="sizeRange" min="8" max="64" value="64">
       <div id="sizeLabel" style="text-align:center; font-size:11px; margin-bottom:10px;">64 x 64</div>
-      <button class="tool" id="exportBtn">Export PNG</button>
-      <button class="tool" id="openSaveMenuBtn" style="background:var(--accent)">Load/Save Menu</button>
-      <button class="tool" id="wipeBtn" style="background:#800">Wipe Board</button>
+      
+      <p1>Extra<p1>
+      <button class="tool" id="openChatMenuBtn" style="background:var(--accent); margin-top:8px;" type="button">Open Lobby Chat</button>
+      <button class="tool" id="exportBtn" type="button">Export PNG</button>
+      <button class="tool" id="openSaveMenuBtn" style="background:var(--accent)" type="button">Load/Save Menu</button>
+      <button class="tool" id="wipeBtn" style="background:#800" type="button">Wipe Canvas</button>
     </div>
   </div>
 </div>
+
 <div id="saveMenu">
   <h3 style="margin-top:0; color:var(--accent)">Cloud Storage</h3>
   <div style="display:flex; gap:6px; margin-bottom:15px;">
     <input id="menuSaveName" placeholder="New Save Name..." style="flex:1; padding:8px; background:#f9f9f9; color:#333; border:1px solid #ccc; border-radius:4px;">
-    <button id="menuSaveBtn" style="width:auto; padding:8px 15px;">Save Now</button>
+    <button id="menuSaveBtn" style="width:auto; padding:8px 15px;" type="button">Save Now</button>
   </div>
   <div id="slotList" style="max-height:300px; overflow-y:auto; margin:10px 0; border-top:1px solid #eee;"></div>
-  <button id="exitSaveMenuBtn" class="tool" style="background:#666; margin-top:10px;">Close Menu</button>
+  <button id="exitSaveMenuBtn" class="tool" style="background:#666; margin-top:10px;" type="button">Close Menu</button>
+</div>
+
+<div id="chatMenu">
+  <h3 style="margin-top:0; color:var(--accent)">Lobby Chat</h3>
+  <div style="display:flex; gap:6px; margin-bottom:15px;">
+    <input id="chatMenuInput" placeholder="Type message..." style="flex:1; padding:8px; background:#f9f9f9; color:#333; border:1px solid #ccc; border-radius:4px;">
+    <button id="chatSendBtn" style="width:auto; padding:8px 15px;" type="button">Enter</button>
+  </div>
+  <div id="chatSlotList" style="max-height:300px; overflow-y:auto; margin:10px 0; border-top:1px solid #eee;"></div>
+  <button id="exitChatMenuBtn" class="tool" style="background:#666; margin-top:10px;" type="button">Close Menu</button>
 </div>
 
 <script>
@@ -156,23 +180,32 @@
   const auth = firebase.auth();
   const db = firebase.firestore();
 
-  const LOBBY_STORAGE_KEY = 'cp_pending_lobby';
   let currentUser = null;
-  let lobbyID;
+  let currentuid = null;
+  let currentUsername = 'User';
+  let lobbyID = 'GLOBAL';
   let GRID_SIZE = 64;
   let grid = Array.from({length:GRID_SIZE},()=>Array(GRID_SIZE).fill('#FFFFFF'));
   let history = [], redoStack = [], tool = 'brush', currentColor = '#000000', isDown = false;
-  let appStarted = false, lastX = null, lastY = null;
+  let lastX = null, lastY = null, preStrokeSnapshot = null;
   const canvas = document.getElementById('canvas'), ctx = canvas.getContext('2d');
   let authMode = 'login';
+  let unsubscribeLobby = null;
+  let isRemoteUpdate = false;
+  let chatMessagesCache = [];
 
-  function showTab(mode) {
+  window.showTab = function(mode) {
     authMode = mode;
     document.getElementById('tabLogin').classList.toggle('active', mode === 'login');
     document.getElementById('tabSignup').classList.toggle('active', mode === 'signup');
     document.getElementById('authBtn').textContent = mode === 'login' ? 'Login' : 'Create Account';
     document.getElementById('authError').style.display = 'none';
-    document.getElementById('firstNameIn').style.display = (mode === 'signup') ? 'block' : 'none';
+    const firstNameIn = document.getElementById('firstNameIn');
+    firstNameIn.style.display = (mode === 'signup') ? 'block' : 'none';
+    firstNameIn.autocomplete = mode === 'signup' ? 'given-name' : 'off';
+    
+    document.getElementById('emailIn').autocomplete = mode === 'signup' ? 'email' : 'username';
+    document.getElementById('passIn').autocomplete = mode === 'signup' ? 'new-password' : 'current-password';
   }
 
   function showError(msg) {
@@ -182,9 +215,7 @@
   }
 
   document.getElementById('googleBtn').onclick = () => {
-    document.getElementById('googleLobbyIn').value = '';
     document.getElementById('googleLobbyModal').style.display = 'flex';
-    document.getElementById('googleLobbyIn').focus();
   };
 
   document.getElementById('googleLobbyNextBtn').onclick = () => {
@@ -192,171 +223,108 @@
     document.getElementById('googleWarningModal').style.display = 'flex';
   };
 
-  document.getElementById('googleLobbyIn').onkeydown = (e) => { 
-    if (e.key === 'Enter') {
-      document.getElementById('googleLobbyModal').style.display = 'none';
-      document.getElementById('googleWarningModal').style.display = 'flex';
-    }
-  };
-
   document.getElementById('googleWarningConfirmBtn').onclick = async () => {
     document.getElementById('googleWarningModal').style.display = 'none';
-
-    const lobbyVal = (document.getElementById('googleLobbyIn').value || 'GLOBAL').trim().toUpperCase();
-    localStorage.setItem(LOBBY_STORAGE_KEY, lobbyVal);
-    
-    const provider = new firebase.auth.GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: 'select_account consent' });
-
+    lobbyID = (document.getElementById('googleLobbyIn').value || 'GLOBAL').trim().toUpperCase();
     try {
-      await auth.signInWithPopup(provider);
-    } catch (error) {
-      showError(error.message);
-    }
+      await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+    } catch (e) { showError(e.message); }
   };
 
   auth.onAuthStateChanged(user => {
     if (user && !currentUser) {
       currentUser = user;
-      const savedLobby = localStorage.getItem(LOBBY_STORAGE_KEY);
-      localStorage.removeItem(LOBBY_STORAGE_KEY);
-      lobbyID = (savedLobby && savedLobby !== '') ? savedLobby : 'GLOBAL';
-      
-      let displayName = user.displayName;
-      if (displayName) {
-        displayName = displayName.split(' ')[0];
-      } else {
-        displayName = user.email ? user.email.split('@')[0] : ('User_' + user.uid.substring(0, 5));
-      }
-
-      startApp(displayName);
+      currentuid = user.uid;
+      currentUsername = user.displayName ? user.displayName.split(' ')[0] : (user.email ? user.email.split('@')[0] : 'User');
+      startApp(currentUsername);
     }
   });
 
   document.getElementById('authBtn').onclick = async () => {
     const email = document.getElementById('emailIn').value.trim();
     const pass = document.getElementById('passIn').value;
-    const lobbyVal = (document.getElementById('lobbyIn').value || 'GLOBAL').trim().toUpperCase();
+    const lobbyVal = document.getElementById('lobbyIn').value.trim().toUpperCase();
     const firstName = document.getElementById('firstNameIn').value.trim();
     
     if (!email || !pass) return showError('Email and password required.');
-    if (authMode === 'signup' && !firstName) return showError('First name is required.');
-
-    document.getElementById('authBtn').textContent = '...';
-    localStorage.setItem(LOBBY_STORAGE_KEY, lobbyVal);
+    if (authMode === 'signup' && !firstName) return showError('First name required.');
+    if (lobbyVal) lobbyID = lobbyVal;
 
     try {
       if (authMode === 'signup') {
-        const userCred = await auth.createUserWithEmailAndPassword(email, pass);
-        await userCred.user.updateProfile({ displayName: firstName });
+        const cred = await auth.createUserWithEmailAndPassword(email, pass);
+        await cred.user.updateProfile({ displayName: firstName });
         location.reload();
-        return;
       } else {
-        const userCred = await auth.signInWithEmailAndPassword(email, pass);
-        currentUser = userCred.user;
-        let loggedInName = currentUser.displayName ? currentUser.displayName.split(' ')[0] : email.split('@')[0];
-        lobbyID = lobbyVal !== '' ? lobbyVal : 'GLOBAL';
-        startApp(loggedInName);
-        return;
+        const cred = await auth.signInWithEmailAndPassword(email, pass);
+        currentUser = cred.user;
+        currentuid = currentUser.uid;
+        currentUsername = currentUser.displayName ? currentUser.displayName.split(' ')[0] : email.split('@')[0];
+        startApp(currentUsername);
       }
-    } catch (error) {
-      localStorage.removeItem(LOBBY_STORAGE_KEY);
-
-      if (authMode === 'signup') {
-        if (error.code === 'auth/email-already-in-use') {
-          showError('Account already exists. Please log in.');
-        } else if (error.code === 'auth/weak-password') {
-          showError('Password should be at least 6 characters.');
-        } else {
-          showError(error.message || 'Error creating account. Please try again.');
-        }
-      } else {
-        showError('Incorrect Email or Password (or try Sign in with Google)');
-      }
-      
-      document.getElementById('authBtn').textContent = authMode === 'login' ? 'Login' : 'Create Account';
+    } catch (e) {
+      showError('Authentication error. Try Google Sign-in or check credentials.');
     }
   };
 
-  ['firstNameIn', 'emailIn', 'passIn', 'lobbyIn'].forEach(id => {
-    document.getElementById(id).onkeydown = (e) => {
-      if (e.key === 'Enter') document.getElementById('authBtn').click();
-    };
-  });
-
-  document.getElementById('togglePassBtn').onclick = () => {
-    const passIn = document.getElementById('passIn');
-    const toggleBtn = document.getElementById('togglePassBtn');
-    if (passIn.type === 'password') {
-      passIn.type = 'text';
-      toggleBtn.textContent = '✔';
-      toggleBtn.title = 'Hide Password';
-    } else {
-      passIn.type = 'password';
-      toggleBtn.textContent = '✖';
-      toggleBtn.title = 'Show Password';
-    }
-  };
-
-  async function logout() {
+  window.logout = async () => {
+    if (unsubscribeLobby) unsubscribeLobby();
     await auth.signOut();
     location.reload();
-  }
+  };
 
   function startApp(username) {
-    if (appStarted) return;
-    appStarted = true;
     document.getElementById('authOverlay').style.display = 'none';
     document.getElementById('mainApp').style.display = 'flex';
     document.getElementById('accountName').innerText = username;
     document.getElementById('lobbyLabel').innerText = 'Lobby: ' + lobbyID;
     initCanvas();
+    initMultiplayer();
   }
 
   function initCanvas() {
     canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
+    document.getElementById('sizeRange').value = GRID_SIZE;
+    document.getElementById('sizeLabel').innerText = GRID_SIZE + ' x ' + GRID_SIZE;
     autoFit(); render();
     window.addEventListener('resize', autoFit);
   }
 
-  function applyFullState(newGrid, newSize) {
-    const sizeChanged = newSize !== GRID_SIZE;
-    GRID_SIZE = newSize;
-    grid = newGrid;
-    if (sizeChanged) {
-      canvas.width = GRID_SIZE;
-      canvas.height = GRID_SIZE;
-      autoFit();
-    }
-    document.getElementById('sizeRange').value = GRID_SIZE;
-    document.getElementById('sizeLabel').innerText = GRID_SIZE + ' x ' + GRID_SIZE;
-    render();
+  function autoFit() {
+    const wrap = document.getElementById('canvasWrap').getBoundingClientRect();
+    const s = Math.min(wrap.width * 0.96, wrap.height * 0.96);
+    canvas.style.width = s + 'px';
+    canvas.style.height = s + 'px';
   }
 
-  function applyWipe(newSize) {
-    const sizeChanged = newSize !== GRID_SIZE;
-    GRID_SIZE = newSize;
-    grid = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill('#FFFFFF'));
-    if (sizeChanged) {
-      canvas.width = GRID_SIZE;
-      canvas.height = GRID_SIZE;
-      autoFit();
-    }
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, GRID_SIZE, GRID_SIZE);
+  function setTool(t) {
+    tool = t;
+    document.querySelectorAll('.tool').forEach(b => b.classList.remove('active'));
+    document.getElementById(t === 'brush' ? 'brushBtn' : t === 'eraser' ? 'eraserBtn' : 'fillBtn').classList.add('active');
   }
+
+  document.getElementById('brushBtn').onclick = () => setTool('brush');
+  document.getElementById('eraserBtn').onclick = () => setTool('eraser');
+  document.getElementById('fillBtn').onclick = () => setTool('fill');
 
   document.getElementById('sizeRange').onchange = (e) => {
-    if (!confirm('Resizing the grid will wipe the current canvas. Continue?')) { e.target.value = GRID_SIZE; return; }
-    const newSize = parseInt(e.target.value);
-    document.getElementById('sizeLabel').innerText = newSize + ' x ' + newSize;
-    applyWipe(newSize);
+    if (!confirm('Resizing the grid will clear your canvas for everyone in the lobby. Proceed?')) {
+      e.target.value = GRID_SIZE;
+      return;
+    }
+    GRID_SIZE = parseInt(e.target.value);
+    document.getElementById('sizeLabel').innerText = GRID_SIZE + ' x ' + GRID_SIZE;
+    grid = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill('#FFFFFF'));
+    canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
+    autoFit(); render();
+    syncCanvasToCloud();
   };
 
   function setPx(x, y, c) {
     if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE || grid[y][x] === c) return;
     grid[y][x] = c;
-    drawPx(x, y, c);
+    ctx.fillStyle = c;
+    ctx.fillRect(x, y, 1, 1);
   }
 
   function drawLine(x0, y0, x1, y1, c) {
@@ -380,9 +348,11 @@
     const x = Math.floor((cx - rect.left) / (rect.width / GRID_SIZE));
     const y = Math.floor((cy - rect.top) / (rect.height / GRID_SIZE));
     if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) return;
+
     if (tool === 'fill') {
       floodFill(x, y, grid[y][x], currentColor);
       isDown = false;
+      syncCanvasToCloud();
     } else {
       const c = (tool === 'brush' ? currentColor : '#FFFFFF');
       if (lastX !== null) drawLine(lastX, lastY, x, y, c); else setPx(x, y, c);
@@ -392,44 +362,66 @@
 
   function floodFill(x, y, targetColor, fillColor) {
     if (targetColor === fillColor) return;
-    const pixels = [];
-    const visited = new Uint8Array(GRID_SIZE * GRID_SIZE);
-    const stack = [y * GRID_SIZE + x];
-    visited[y * GRID_SIZE + x] = 1;
+    const stack = [[x, y]];
     while (stack.length) {
-      const idx = stack.pop();
-      const cy = (idx / GRID_SIZE) | 0;
-      const cx = idx % GRID_SIZE;
-      if (grid[cy][cx] !== targetColor) continue;
-      grid[cy][cx] = fillColor;
-      pixels.push({x: cx, y: cy, c: fillColor});
-      const neighbors = [
-        cy > 0           ? (cy - 1) * GRID_SIZE + cx : -1,
-        cy < GRID_SIZE-1 ? (cy + 1) * GRID_SIZE + cx : -1,
-        cx > 0           ?  cy      * GRID_SIZE + cx - 1 : -1,
-        cx < GRID_SIZE-1 ?  cy      * GRID_SIZE + cx + 1 : -1,
-      ];
-      for (let i = 0; i < 4; i++) {
-        const n = neighbors[i];
-        if (n !== -1 && !visited[n]) { visited[n] = 1; stack.push(n); }
+      let [cx, cy] = stack.pop();
+      if (cx < 0 || cx >= GRID_SIZE || cy < 0 || cy >= GRID_SIZE) continue;
+      if (grid[cy][cx] === targetColor) {
+        grid[cy][cx] = fillColor;
+        ctx.fillStyle = fillColor;
+        ctx.fillRect(cx, cy, 1, 1);
+        stack.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
       }
     }
-    if (!pixels.length) return;
-    for (let i = 0; i < pixels.length; i++) drawPx(pixels[i].x, pixels[i].y, pixels[i].c);
   }
 
-  document.getElementById('wipeBtn').onclick = () => {
-    if (!confirm('Wipe all?')) return;
-    history.push(JSON.stringify(grid));
-    redoStack = [];
-    applyWipe(GRID_SIZE);
+  canvas.onmousedown = (e) => { preStrokeSnapshot = JSON.stringify(grid); isDown = true; paint(e); };
+  canvas.ontouchstart = (e) => { e.preventDefault(); preStrokeSnapshot = JSON.stringify(grid); isDown = true; paint(e); };
+  window.onmouseup = () => {
+    if (isDown) {
+      if (preStrokeSnapshot) {
+        history.push(preStrokeSnapshot);
+        redoStack = [];
+      }
+      syncCanvasToCloud();
+    }
+    isDown = false; lastX = null; lastY = null; preStrokeSnapshot = null;
+  };
+  window.ontouchend = window.onmouseup;
+  canvas.onmousemove = paint;
+  canvas.ontouchmove = (e) => { e.preventDefault(); paint(e); };
+
+  document.getElementById('undoBtn').onclick = () => {
+    if (!history.length) return;
+    redoStack.push(JSON.stringify(grid));
+    grid = JSON.parse(history.pop());
+    render();
+    syncCanvasToCloud();
   };
 
-  function drawPx(x, y, c) {
-    grid[y][x] = c;
-    ctx.fillStyle = c;
-    ctx.fillRect(x, y, 1, 1);
-  }
+  document.getElementById('redoBtn').onclick = () => {
+    if (!redoStack.length) return;
+    history.push(JSON.stringify(grid));
+    grid = JSON.parse(redoStack.pop());
+    render();
+    syncCanvasToCloud();
+  };
+
+  document.getElementById('wipeBtn').onclick = () => {
+    if (!confirm('Wipe canvas for everyone in this lobby?')) return;
+    history.push(JSON.stringify(grid));
+    redoStack = [];
+    grid = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill('#FFFFFF'));
+    render();
+    syncCanvasToCloud();
+  };
+
+  document.getElementById('exportBtn').onclick = () => {
+    const a = document.createElement('a');
+    a.download = 'art.png';
+    a.href = canvas.toDataURL();
+    a.click();
+  };
 
   function render() {
     for (let y = 0; y < GRID_SIZE; y++) {
@@ -440,42 +432,103 @@
     }
   }
 
-  function autoFit() {
-    const wrap = document.getElementById('canvasWrap').getBoundingClientRect();
-    const s = Math.min(wrap.width * 0.96, wrap.height * 0.96);
-    canvas.style.width = s + 'px';
-    canvas.style.height = s + 'px';
+  function initMultiplayer() {
+    const lobbyRef = db.collection('lobbies').doc(lobbyID);
+    
+    lobbyRef.get().then(doc => {
+      if (!doc.exists) {
+        lobbyRef.set({ size: GRID_SIZE, grid: grid.flat(), chat: [] });
+      }
+    });
+
+    unsubscribeLobby = lobbyRef.onSnapshot(doc => {
+      if (!doc.exists) return;
+      const data = doc.data();
+      if (data) {
+        if (data.grid) {
+          isRemoteUpdate = true;
+          GRID_SIZE = data.size || 64;
+          
+          document.getElementById('sizeRange').value = GRID_SIZE;
+          document.getElementById('sizeLabel').innerText = GRID_SIZE + ' x ' + GRID_SIZE;
+
+          const flat = data.grid;
+          grid = [];
+          for (let i = 0; i < GRID_SIZE; i++) {
+            grid.push(flat.slice(i * GRID_SIZE, (i + 1) * GRID_SIZE));
+          }
+          if (canvas.width !== GRID_SIZE) {
+            canvas.width = GRID_SIZE;
+            canvas.height = GRID_SIZE;
+            autoFit();
+          }
+          render();
+          isRemoteUpdate = false;
+        }
+
+        if (data.chat) {
+          chatMessagesCache = data.chat;
+          if (document.getElementById('chatMenu').style.display === 'block') {
+            refreshChatList();
+          }
+        }
+      }
+    });
   }
 
-  function setTool(t) {
-    tool = t;
-    document.querySelectorAll('.tool').forEach(b => b.classList.remove('active'));
-    document.getElementById(t === 'brush' ? 'brushBtn' : t === 'eraser' ? 'eraserBtn' : 'fillBtn').classList.add('active');
+  async function syncCanvasToCloud() {
+    if (isRemoteUpdate) return;
+    try {
+      await db.collection('lobbies').doc(lobbyID).set({
+        size: GRID_SIZE,
+        grid: grid.flat(),
+        lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+    } catch (e) {
+      console.error('Failed to sync canvas updates:', e);
+    }
   }
 
-  document.getElementById('brushBtn').onclick  = () => setTool('brush');
-  document.getElementById('eraserBtn').onclick = () => setTool('eraser');
-  document.getElementById('fillBtn').onclick   = () => setTool('fill');
+  async function sendChatMessage() {
+    const input = document.getElementById('chatMenuInput');
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
 
-  document.getElementById('undoBtn').onclick = () => {
-    if (!history.length) return;
-    redoStack.push(JSON.stringify(grid));
-    grid = JSON.parse(history.pop());
-    render();
-  };
+    try {
+      const lobbyRef = db.collection('lobbies').doc(lobbyID);
+      await db.runTransaction(async (transaction) => {
+        const doc = await transaction.get(lobbyRef);
+        let chat = doc.exists && doc.data().chat ? doc.data().chat : [];
+        chat.push({ uid: currentuid, user: currentUsername, text: text, timestamp: Date.now() });
+        if (chat.length > 50) chat = chat.slice(chat.length - 50);
+        transaction.set(lobbyRef, { chat: chat }, { merge: true });
+      });
+    } catch (e) {
+      console.error('Failed to send message:', e);
+    }
+  }
 
-  document.getElementById('redoBtn').onclick = () => {
-    if (!redoStack.length) return;
-    history.push(JSON.stringify(grid));
-    grid = JSON.parse(redoStack.pop());
-    render();
-  };
+  window.deleteChatMessage = async function(timestamp) {
+    try {
+      const lobbyRef = db.collection('lobbies').doc(lobbyID);
+      await db.runTransaction(async (transaction) => {
+        const doc = await transaction.get(lobbyRef);
+        if (!doc.exists) return;
+        let chat = doc.data().chat || [];
+        chat = chat.filter(m => m.timestamp !== timestamp);
+        transaction.set(lobbyRef, { chat: chat }, { merge: true });
+      });
+    } catch (e) {
+      console.error('Failed to delete message:', e);
+    }
+  }
 
-  document.getElementById('exportBtn').onclick = () => {
-    const a = document.createElement('a');
-    a.download = 'art.png';
-    a.href = canvas.toDataURL();
-    a.click();
+  document.getElementById('chatSendBtn').onclick = sendChatMessage;
+  document.getElementById('chatMenuInput').onkeydown = (e) => {
+    if (e.key === 'Enter') {
+      sendChatMessage();
+    }
   };
 
   document.getElementById('picker').oninput = (e) => {
@@ -492,129 +545,104 @@
     }
   };
 
+  const colors = ["#D20103","#FF0000","#FF8484","#EC8E01","#FFA500","#FFDC9A","#E2C44B","#FFFF00","#FFFFAE","#226308","#008000","#00FF00","#2227C3","#0000DD","#ADD8E6","#621079","#800080","#CC6CE7","#DCADB6","#FFC0CB","#FFF0F3","#A07D45","#C8A165","#EFD9B8","#FFFFFF","#D3D3D3","#808080","#5F5E5E","#000000"];
+  colors.forEach(c => {
+    const s = document.createElement('div');
+    s.className = 'swatch'; s.style.background = c;
+    s.onclick = () => { currentColor = c; document.getElementById('picker').value = c; document.getElementById('hexInput').value = c; };
+    document.getElementById('palette').appendChild(s);
+  });
+
   document.getElementById('openSaveMenuBtn').onclick = () => {
     document.getElementById('saveMenu').style.display = 'block';
     refreshSaveList();
   };
-
   document.getElementById('exitSaveMenuBtn').onclick = () => document.getElementById('saveMenu').style.display = 'none';
+
+  document.getElementById('openChatMenuBtn').onclick = () => {
+    document.getElementById('chatMenu').style.display = 'block';
+    refreshChatList();
+  };
+  document.getElementById('exitChatMenuBtn').onclick = () => document.getElementById('chatMenu').style.display = 'none';
+
+  function refreshChatList() {
+    const list = document.getElementById('chatSlotList');
+    list.innerHTML = '';
+    if (chatMessagesCache.length === 0) {
+      list.innerHTML = '<div style="padding:10px; font-size:14px; color:#333; text-align:center;">No messages yet.</div>';
+      return;
+    }
+    // Loop in reverse so newest messages appear at the top
+    for (let i = chatMessagesCache.length - 1; i >= 0; i--) {
+      const msg = chatMessagesCache[i];
+      const div = document.createElement('div');
+      div.className = 'chat-slot';
+      
+      let deleteBtnHTML = '';
+      if (msg.uid === currentuid) {
+        deleteBtnHTML = `<button class="del-btn" onclick="deleteChatMessage(${msg.timestamp})">Delete</button>`;
+      }
+
+      div.innerHTML = `<div class="msg-content"><span>${msg.user}:</span> ${msg.text}</div><div>${deleteBtnHTML}</div>`;
+      list.appendChild(div);
+    }
+    list.scrollTop = 0;
+  }
 
   document.getElementById('menuSaveBtn').onclick = async () => {
     const name = document.getElementById('menuSaveName').value.trim() || 'My Drawing';
     try {
-      const docId = `${currentUser.uid}_${name}`;
-      const flatGrid = grid.flat();
-      const imagePreview = canvas.toDataURL('image/png');
-
-      await db.collection('saves').doc(docId).set({
-        user_id: currentUser.uid,
-        name: name,
-        image: imagePreview,
-        data: { grid: flatGrid, size: GRID_SIZE }
+      await db.collection('saves').doc(`${currentUser.uid}_${name}`).set({
+        user_id: currentUser.uid, name: name, image: canvas.toDataURL('image/png'), data: { grid: grid.flat(), size: GRID_SIZE }
       });
-
-      alert('Saved!');
+      alert('Saved successfully!');
       document.getElementById('menuSaveName').value = '';
       refreshSaveList();
-    } catch (error) {
-      alert('Save failed: ' + error.message);
-    }
+    } catch (e) { alert('Save failed.'); }
+  };
+
+  window.loadSave = async (name) => {
+    try {
+      const doc = await db.collection('saves').doc(`${currentUser.uid}_${name}`).get();
+      if (!doc.exists) return;
+      const d = doc.data().data;
+      GRID_SIZE = d.size;
+
+      document.getElementById('sizeRange').value = GRID_SIZE;
+      document.getElementById('sizeLabel').innerText = GRID_SIZE + ' x ' + GRID_SIZE;
+
+      const flat = d.grid;
+      grid = [];
+      for (let i = 0; i < GRID_SIZE; i++) grid.push(flat.slice(i * GRID_SIZE, (i + 1) * GRID_SIZE));
+      canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
+      autoFit(); render();
+      document.getElementById('saveMenu').style.display = 'none';
+      syncCanvasToCloud();
+    } catch (e) { alert('Failed to load.'); }
+  };
+
+  window.deleteSave = async (name) => {
+    if (!confirm('Delete save?')) return;
+    await db.collection('saves').doc(`${currentUser.uid}_${name}`).delete();
+    refreshSaveList();
   };
 
   async function refreshSaveList() {
     const list = document.getElementById('slotList');
-    list.innerHTML = '<i style="color:#999; padding:10px; display:block;">Loading...</i>';
+    list.innerHTML = 'Loading...';
     try {
-      const snapshot = await db.collection('saves').where('user_id', '==', currentUser.uid).get();
-      if (snapshot.empty) {
-        list.innerHTML = '<i style="color:#999; padding:10px; display:block;">No saves yet.</i>';
-        return;
-      }
+      const snap = await db.collection('saves').where('user_id', '==', currentUser.uid).get();
+      if (snap.empty) { list.innerHTML = 'No saves found.'; return; }
       list.innerHTML = '';
-      snapshot.forEach(doc => {
-        const row = doc.data();
+      snap.forEach(doc => {
+        const d = doc.data();
         const div = document.createElement('div');
         div.className = 'save-slot';
-        
-        const thumbnailHtml = row.image 
-          ? `<img src="${row.image}" style="width:32px; height:32px; border:1px solid #ccc; image-rendering:pixelated; border-radius:4px;">` 
-          : '';
-
-        div.innerHTML = `
-          <div style="display:flex; align-items:center; gap:10px;">
-            ${thumbnailHtml}
-            <strong>${row.name}</strong>
-          </div>
-          <div>
-            <button class="load-btn" onclick="loadSave('${row.name}')">Load</button>
-            <button class="del-btn" onclick="deleteSave('${row.name}')">Delete</button>
-          </div>`;
+        div.innerHTML = `<div><img src="${d.image}" style="width:28px;height:28px;vertical-align:middle;margin-right:6px"><strong>${d.name}</strong></div><div><button class="load-btn" onclick="loadSave('${d.name}')">Load</button><button class="del-btn" onclick="deleteSave('${d.name}')">Delete</button></div>`;
         list.appendChild(div);
       });
-    } catch (err) {
-      list.innerHTML = '<i style="color:red">Failed to load saves.</i>';
-    }
+    } catch (e) { list.innerHTML = 'Error loading saves.'; }
   }
-
-  window.loadSave = async (name) => {
-    try {
-      const docId = `${currentUser.uid}_${name}`;
-      const doc = await db.collection('saves').doc(docId).get();
-      if (!doc.exists) return alert('Failed to load.');
-      const data = doc.data().data;
-      const size = data.size;
-      const flatGrid = data.grid;
-
-      const restoredGrid = [];
-      for (let i = 0; i < size; i++) {
-        restoredGrid.push(flatGrid.slice(i * size, (i + 1) * size));
-      }
-
-      applyFullState(restoredGrid, size);
-      document.getElementById('saveMenu').style.display = 'none';
-    } catch (err) {
-      alert('Failed to load.');
-    }
-  };
-
-  window.deleteSave = async (name) => {
-    if (!confirm(`Delete "${name}"?`)) return;
-    const docId = `${currentUser.uid}_${name}`;
-    await db.collection('saves').doc(docId).delete();
-    refreshSaveList();
-  };
-
-  const colors = ["#D20103","#FF0000","#FF8484","#EC8E01","#FFA500","#FFDC9A","#E2C44B","#FFFF00","#FFFFAE","#226308","#008000","#00FF00","#2227C3","#0000DD","#ADD8E6","#621079","#800080","#CC6CE7","#DCADB6","#FFC0CB","#FFF0F3","#A07D45","#C8A165","#EFD9B8","#FFFFFF","#D3D3D3","#808080","#5F5E5E","#000000"];
-  colors.forEach(c => {
-    const s = document.createElement('div');
-    s.className = 'swatch';
-    s.style.background = c;
-    s.onclick = () => {
-      currentColor = c;
-      document.getElementById('picker').value = c;
-      document.getElementById('hexInput').value = c;
-    };
-    document.getElementById('palette').appendChild(s);
-  });
-
-  let preStrokeSnapshot = null;
-  canvas.onmousedown = (e) => { preStrokeSnapshot = JSON.stringify(grid); isDown = true; paint(e); };
-  canvas.ontouchstart = (e) => { e.preventDefault(); preStrokeSnapshot = JSON.stringify(grid); isDown = true; paint(e); };
-
-  function endStroke() {
-    if (isDown && preStrokeSnapshot !== null && preStrokeSnapshot !== JSON.stringify(grid)) {
-      history.push(preStrokeSnapshot);
-      redoStack = [];
-    }
-    preStrokeSnapshot = null;
-    isDown = false;
-    lastX = lastY = null;
-  }
-
-  window.onmouseup = endStroke;
-  window.ontouchend = endStroke;
-  canvas.onmousemove = paint;
-  canvas.ontouchmove = (e) => { e.preventDefault(); paint(e); };
 </script>
 </body>
 </html>
