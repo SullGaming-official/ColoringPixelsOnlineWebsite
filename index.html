@@ -51,15 +51,18 @@
   input[type=range]::-moz-range-track { width: 100%; height: 8px; cursor: pointer; background: #444; border-radius: 4px; border: none; }
   input[type=range]::-moz-range-thumb { height: 18px; width: 18px; border-radius: 50%; background: var(--accent); cursor: pointer; border: none; }
 
-  #saveMenu, #chatMenu { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; color:#333; border:3px solid var(--accent); padding:20px; display:none; z-index:11000; width:440px; border-radius:12px; box-shadow:0 10px 50px rgba(0,0,0,0.5); }
+  #saveMenu, #chatMenu, #friendsMenu { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:#fff; color:#333; border:3px solid var(--accent); padding:20px; display:none; z-index:11000; width:440px; border-radius:12px; box-shadow:0 10px 50px rgba(0,0,0,0.5); }
   .save-slot { display:flex; justify-content:space-between; align-items:center; padding:10px; border-bottom:1px solid #eee; font-size:14px; color:#333; }
-  .chat-slot { display:flex; justify-content:space-between; align-items:center; padding:8px 10px; border-bottom:1px solid #eee; font-size:14px; color:#333; word-break:break-word; }
-  .chat-slot .msg-content { flex:1; margin-right:8px; }
-  .chat-slot span { font-weight:bold; color:var(--accent); }
+  .chat-slot, .friend-slot { display:flex; justify-content:space-between; align-items:center; padding:8px 10px; border-bottom:1px solid #eee; font-size:14px; color:#333; word-break:break-word; }
+  .chat-slot .msg-content, .friend-slot .friend-info { flex:1; margin-right:8px; }
+  .chat-slot span, .friend-slot span { font-weight:bold; color:var(--accent); }
   #menuSaveBtn { background: #28a745 !important; color: white !important; border: 1px solid #1e7e34 !important; font-weight: bold; cursor: pointer; }
-  #chatSendBtn { background: #28a745 !important; color: white !important; border: 1px solid #1e7e34 !important; font-weight: bold; cursor: pointer; }
-  .load-btn { background: #007bff !important; color: white !important; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; }
-  .del-btn { background: #dc3545 !important; color: white !important; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; margin-left: 5px; }
+  #chatSendBtn, #friendSendBtn { background: #28a745 !important; color: white !important; border: 1px solid #1e7e34 !important; font-weight: bold; cursor: pointer; }
+  .load-btn, .accept-btn, .join-btn { background: #28a745 !important; color: white !important; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; margin-left: 3px; }
+  .del-btn, .decline-btn { background: #dc3545 !important; color: white !important; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; margin-left: 3px; }
+  .menu-tabs { display: flex; gap: 5px; margin-bottom: 12px; }
+  .menu-tabs button { flex: 1; background: #ddd; color: #333; font-size: 11px; padding: 6px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+  .menu-tabs button.active { background: var(--accent); color: white; }
   @media (max-width: 600px) { #sidebar { display:none; } }
 </style>
 </head>
@@ -136,8 +139,9 @@
       <input type="range" id="sizeRange" min="8" max="64" value="64">
       <div id="sizeLabel" style="text-align:center; font-size:11px; margin-bottom:10px;">64 x 64</div>
       
-      <p1>Extra<p1>
+      <p1>Extra</p1>
       <button class="tool" id="openChatMenuBtn" style="background:var(--accent); margin-top:8px;" type="button">Open Lobby Chat</button>
+      <button class="tool" id="openFriendsMenuBtn" style="background:var(--accent)" type="button">Open Friends</button>
       <button class="tool" id="exportBtn" type="button">Export PNG</button>
       <button class="tool" id="openSaveMenuBtn" style="background:var(--accent)" type="button">Load/Save Menu</button>
       <button class="tool" id="wipeBtn" style="background:#800" type="button">Wipe Canvas</button>
@@ -165,6 +169,38 @@
   <button id="exitChatMenuBtn" class="tool" style="background:#666; margin-top:10px;" type="button">Close Menu</button>
 </div>
 
+<div id="friendsMenu">
+  <h3 style="margin-top:0; color:var(--accent)">Friends</h3>
+  <div class="menu-tabs">
+    <button id="friendTabAdd" class="active" onclick="switchFriendTab('add')" type="button">Add Friend</button>
+    <button id="friendTabPending" onclick="switchFriendTab('pending')" type="button">Pending</button>
+    <button id="friendTabReceived" onclick="switchFriendTab('received')" type="button">Received</button>
+    <button id="friendTabList" onclick="switchFriendTab('list')" type="button">Friends</button>
+  </div>
+  
+  <div id="friendTabContentAdd" style="display:block;">
+    <div style="display:flex; gap:6px; margin-bottom:15px;">
+      <input id="friendSearchInput" placeholder="Username or Email..." style="flex:1; padding:8px; background:#f9f9f9; color:#333; border:1px solid #ccc; border-radius:4px;">
+      <button id="friendSendBtn" style="width:auto; padding:8px 15px;" type="button">Send</button>
+    </div>
+    <div id="friendSearchStatus" style="font-size:12px; color:#666; text-align:center; margin-bottom:10px;"></div>
+  </div>
+
+  <div id="friendTabContentPending" style="display:none;">
+    <div id="pendingSlotList" style="max-height:250px; overflow-y:auto; margin:10px 0; border-top:1px solid #eee;"></div>
+  </div>
+
+  <div id="friendTabContentReceived" style="display:none;">
+    <div id="receivedSlotList" style="max-height:250px; overflow-y:auto; margin:10px 0; border-top:1px solid #eee;"></div>
+  </div>
+
+  <div id="friendTabContentList" style="display:none;">
+    <div id="friendsSlotList" style="max-height:250px; overflow-y:auto; margin:10px 0; border-top:1px solid #eee;"></div>
+  </div>
+
+  <button id="exitFriendsMenuBtn" class="tool" style="background:#666; margin-top:10px;" type="button">Close Menu</button>
+</div>
+
 <script>
   const firebaseConfig = {
     apiKey: "AIzaSyA3_FLPC31HnglhLnxnTravEkdIvwHmUtk",
@@ -183,6 +219,7 @@
   let currentUser = null;
   let currentuid = null;
   let currentUsername = 'User';
+  let currentUserEmail = '';
   let lobbyID = 'GLOBAL';
   let GRID_SIZE = 64;
   let grid = Array.from({length:GRID_SIZE},()=>Array(GRID_SIZE).fill('#FFFFFF'));
@@ -191,8 +228,12 @@
   const canvas = document.getElementById('canvas'), ctx = canvas.getContext('2d');
   let authMode = 'login';
   let unsubscribeLobby = null;
+  let unsubscribeUserDoc = null;
   let isRemoteUpdate = false;
   let chatMessagesCache = [];
+  let pendingPixels = [];
+  let syncTimer = null;
+  let userProfileData = { friends: [], pending: [], received: [] };
 
   window.showTab = function(mode) {
     authMode = mode;
@@ -231,11 +272,46 @@
     } catch (e) { showError(e.message); }
   };
 
-  auth.onAuthStateChanged(user => {
+  // Helper to generate unique username with #@@@@ if name exists
+  async function resolveUniqueUsername(baseName) {
+    let nameToCheck = baseName;
+    while (true) {
+      const snap = await db.collection('users').where('username', '==', nameToCheck).get();
+      if (snap.empty) {
+        return nameToCheck;
+      }
+      // If name exists, check if it belongs to current user updating their own profile
+      let belongsToCurrentUser = false;
+      snap.forEach(doc => {
+        if (doc.id === currentuid) belongsToCurrentUser = true;
+      });
+      if (belongsToCurrentUser) return nameToCheck;
+
+      // Append random 4 digit tag like #4819
+      const randTag = Math.floor(1000 + Math.random() * 9000);
+      nameToCheck = `${baseName}#${randTag}`;
+    }
+  }
+
+  auth.onAuthStateChanged(async user => {
     if (user && !currentUser) {
       currentUser = user;
       currentuid = user.uid;
-      currentUsername = user.displayName ? user.displayName.split(' ')[0] : (user.email ? user.email.split('@')[0] : 'User');
+      currentUserEmail = user.email || '';
+      
+      const rawName = user.displayName ? user.displayName.split(' ')[0] : (user.email ? user.email.split('@')[0] : 'User');
+      
+      // Check if user document already exists and has a resolved unique username
+      const userDocRef = db.collection('users').doc(currentuid);
+      const userDocSnap = await userDocRef.get();
+      
+      if (userDocSnap.exists && userDocSnap.data().username) {
+        currentUsername = userDocSnap.data().username;
+      } else {
+        currentUsername = await resolveUniqueUsername(rawName);
+        await userDocRef.set({ username: currentUsername, email: currentUserEmail, uid: currentuid }, { merge: true });
+      }
+
       startApp(currentUsername);
     }
   });
@@ -253,13 +329,37 @@
     try {
       if (authMode === 'signup') {
         const cred = await auth.createUserWithEmailAndPassword(email, pass);
+        currentuid = cred.user.uid;
         await cred.user.updateProfile({ displayName: firstName });
+        
+        currentUsername = await resolveUniqueUsername(firstName);
+
+        await db.collection('users').doc(currentuid).set({
+          uid: currentuid,
+          username: currentUsername,
+          email: email,
+          lobby: lobbyID,
+          friends: [],
+          pending: [],
+          received: []
+        });
         location.reload();
       } else {
         const cred = await auth.signInWithEmailAndPassword(email, pass);
         currentUser = cred.user;
         currentuid = currentUser.uid;
-        currentUsername = currentUser.displayName ? currentUser.displayName.split(' ')[0] : email.split('@')[0];
+        currentUserEmail = currentUser.email || '';
+        
+        const userDocRef = db.collection('users').doc(currentuid);
+        const userDocSnap = await userDocRef.get();
+        if (userDocSnap.exists && userDocSnap.data().username) {
+          currentUsername = userDocSnap.data().username;
+        } else {
+          const rawName = currentUser.displayName ? currentUser.displayName.split(' ')[0] : email.split('@')[0];
+          currentUsername = await resolveUniqueUsername(rawName);
+        }
+
+        await db.collection('users').doc(currentuid).set({ lobby: lobbyID, username: currentUsername }, { merge: true });
         startApp(currentUsername);
       }
     } catch (e) {
@@ -269,6 +369,17 @@
 
   window.logout = async () => {
     if (unsubscribeLobby) unsubscribeLobby();
+    if (unsubscribeUserDoc) unsubscribeUserDoc();
+    try {
+      const lobbyRef = db.collection('lobbies').doc(lobbyID);
+      const doc = await lobbyRef.get();
+      if (doc.exists) {
+        let players = doc.data().players || [];
+        players = players.filter(p => p !== currentUsername);
+        await lobbyRef.update({ players });
+      }
+      await db.collection('users').doc(currentuid).set({ lobby: '' }, { merge: true });
+    } catch(e) {}
     await auth.signOut();
     location.reload();
   };
@@ -280,6 +391,7 @@
     document.getElementById('lobbyLabel').innerText = 'Lobby: ' + lobbyID;
     initCanvas();
     initMultiplayer();
+    initUserProfile();
   }
 
   function initCanvas() {
@@ -317,7 +429,7 @@
     grid = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill('#FFFFFF'));
     canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
     autoFit(); render();
-    syncCanvasToCloud();
+    syncFullCanvas();
   };
 
   function setPx(x, y, c) {
@@ -325,6 +437,8 @@
     grid[y][x] = c;
     ctx.fillStyle = c;
     ctx.fillRect(x, y, 1, 1);
+    pendingPixels.push({x, y, c});
+    scheduleSync();
   }
 
   function drawLine(x0, y0, x1, y1, c) {
@@ -350,9 +464,12 @@
     if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) return;
 
     if (tool === 'fill') {
-      floodFill(x, y, grid[y][x], currentColor);
+      const targetColor = grid[y][x];
+      const fillColor = currentColor;
+      if (targetColor !== fillColor) {
+        floodFillPixels(x, y, targetColor, fillColor);
+      }
       isDown = false;
-      syncCanvasToCloud();
     } else {
       const c = (tool === 'brush' ? currentColor : '#FFFFFF');
       if (lastX !== null) drawLine(lastX, lastY, x, y, c); else setPx(x, y, c);
@@ -360,30 +477,46 @@
     }
   }
 
-  function floodFill(x, y, targetColor, fillColor) {
-    if (targetColor === fillColor) return;
-    const stack = [[x, y]];
+  function floodFillPixels(startX, startY, targetColor, fillColor) {
+    preStrokeSnapshot = JSON.stringify(grid);
+    const stack = [[startX, startY]];
+    const filledBatch = [];
+    const visited = new Uint8Array(GRID_SIZE * GRID_SIZE);
+
     while (stack.length) {
       let [cx, cy] = stack.pop();
       if (cx < 0 || cx >= GRID_SIZE || cy < 0 || cy >= GRID_SIZE) continue;
+      const idx = cy * GRID_SIZE + cx;
+      if (visited[idx]) continue;
+      visited[idx] = 1;
+
       if (grid[cy][cx] === targetColor) {
         grid[cy][cx] = fillColor;
-        ctx.fillStyle = fillColor;
-        ctx.fillRect(cx, cy, 1, 1);
+        filledBatch.push({x: cx, y: cy, c: fillColor});
+        
         stack.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
       }
     }
+
+    if (filledBatch.length > 0) {
+      filledBatch.forEach(p => {
+        ctx.fillStyle = p.c;
+        ctx.fillRect(p.x, p.y, 1, 1);
+      });
+      pendingPixels.push(...filledBatch);
+      history.push(preStrokeSnapshot);
+      redoStack = [];
+      scheduleSync();
+    }
+    preStrokeSnapshot = null;
   }
 
   canvas.onmousedown = (e) => { preStrokeSnapshot = JSON.stringify(grid); isDown = true; paint(e); };
   canvas.ontouchstart = (e) => { e.preventDefault(); preStrokeSnapshot = JSON.stringify(grid); isDown = true; paint(e); };
   window.onmouseup = () => {
-    if (isDown) {
-      if (preStrokeSnapshot) {
-        history.push(preStrokeSnapshot);
-        redoStack = [];
-      }
-      syncCanvasToCloud();
+    if (isDown && preStrokeSnapshot) {
+      history.push(preStrokeSnapshot);
+      redoStack = [];
     }
     isDown = false; lastX = null; lastY = null; preStrokeSnapshot = null;
   };
@@ -396,7 +529,7 @@
     redoStack.push(JSON.stringify(grid));
     grid = JSON.parse(history.pop());
     render();
-    syncCanvasToCloud();
+    syncFullCanvas();
   };
 
   document.getElementById('redoBtn').onclick = () => {
@@ -404,7 +537,7 @@
     history.push(JSON.stringify(grid));
     grid = JSON.parse(redoStack.pop());
     render();
-    syncCanvasToCloud();
+    syncFullCanvas();
   };
 
   document.getElementById('wipeBtn').onclick = () => {
@@ -413,7 +546,7 @@
     redoStack = [];
     grid = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill('#FFFFFF'));
     render();
-    syncCanvasToCloud();
+    syncFullCanvas();
   };
 
   document.getElementById('exportBtn').onclick = () => {
@@ -435,9 +568,34 @@
   function initMultiplayer() {
     const lobbyRef = db.collection('lobbies').doc(lobbyID);
     
+    db.collection('users').doc(currentuid).set({ lobby: lobbyID }, { merge: true });
+
     lobbyRef.get().then(doc => {
       if (!doc.exists) {
-        lobbyRef.set({ size: GRID_SIZE, grid: grid.flat(), chat: [] });
+        lobbyRef.set({ 
+          size: GRID_SIZE, 
+          pixels: [], 
+          canvasData: JSON.stringify(grid.flat()), 
+          players: [currentUsername], 
+          chat: [] 
+        });
+      } else {
+        let players = doc.data().players || [];
+        if (!players.includes(currentUsername)) {
+          players.push(currentUsername);
+          lobbyRef.update({ players });
+        } else {
+          const data = doc.data();
+          if (data.canvasData) {
+            const flat = JSON.parse(data.canvasData);
+            if (flat.length === GRID_SIZE * GRID_SIZE) {
+              for (let i = 0; i < GRID_SIZE; i++) {
+                grid[i] = flat.slice(i * GRID_SIZE, (i + 1) * GRID_SIZE);
+              }
+              render();
+            }
+          }
+        }
       }
     });
 
@@ -445,24 +603,36 @@
       if (!doc.exists) return;
       const data = doc.data();
       if (data) {
-        if (data.grid) {
-          isRemoteUpdate = true;
-          GRID_SIZE = data.size || 64;
-          
+        if (data.size && data.size !== GRID_SIZE) {
+          GRID_SIZE = data.size;
           document.getElementById('sizeRange').value = GRID_SIZE;
           document.getElementById('sizeLabel').innerText = GRID_SIZE + ' x ' + GRID_SIZE;
+          canvas.width = GRID_SIZE;
+          canvas.height = GRID_SIZE;
+          autoFit();
+        }
 
-          const flat = data.grid;
-          grid = [];
-          for (let i = 0; i < GRID_SIZE; i++) {
-            grid.push(flat.slice(i * GRID_SIZE, (i + 1) * GRID_SIZE));
+        if (data.canvasData && data.lastUid !== currentuid) {
+          isRemoteUpdate = true;
+          const flat = JSON.parse(data.canvasData);
+          if (flat.length === GRID_SIZE * GRID_SIZE) {
+            for (let i = 0; i < GRID_SIZE; i++) {
+              grid[i] = flat.slice(i * GRID_SIZE, (i + 1) * GRID_SIZE);
+            }
+            render();
           }
-          if (canvas.width !== GRID_SIZE) {
-            canvas.width = GRID_SIZE;
-            canvas.height = GRID_SIZE;
-            autoFit();
-          }
-          render();
+          isRemoteUpdate = false;
+        }
+
+        if (data.pixels && data.lastUid !== currentuid && data.pixels.length > 0) {
+          isRemoteUpdate = true;
+          data.pixels.forEach(p => {
+            if (p.x >= 0 && p.x < GRID_SIZE && p.y >= 0 && p.y < GRID_SIZE) {
+              grid[p.y][p.x] = p.c;
+              ctx.fillStyle = p.c;
+              ctx.fillRect(p.x, p.y, 1, 1);
+            }
+          });
           isRemoteUpdate = false;
         }
 
@@ -476,16 +646,71 @@
     });
   }
 
-  async function syncCanvasToCloud() {
+  function initUserProfile() {
+    const userRef = db.collection('users').doc(currentuid);
+    userRef.get().then(doc => {
+      if (!doc.exists) {
+        userRef.set({
+          uid: currentuid,
+          username: currentUsername,
+          email: currentUserEmail,
+          lobby: lobbyID,
+          friends: [],
+          pending: [],
+          received: []
+        });
+      } else {
+        userRef.set({ lobby: lobbyID }, { merge: true });
+      }
+    });
+
+    unsubscribeUserDoc = userRef.onSnapshot(doc => {
+      if (!doc.exists) return;
+      userProfileData = doc.data() || { friends: [], pending: [], received: [] };
+      if (document.getElementById('friendsMenu').style.display === 'block') {
+        refreshFriendsLists();
+      }
+    });
+  }
+
+  function scheduleSync() {
+    if (syncTimer) return;
+    syncTimer = setTimeout(async () => {
+      syncTimer = null;
+      if (pendingPixels.length === 0 || isRemoteUpdate) return;
+      
+      const pixelsToSend = [...pendingPixels];
+      pendingPixels = [];
+
+      try {
+        const lobbyRef = db.collection('lobbies').doc(lobbyID);
+        await lobbyRef.update({
+          pixels: firebase.firestore.FieldValue.arrayUnion(...pixelsToSend),
+          lastUser: currentUsername,
+          lastUid: currentuid,
+          lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      } catch (e) {
+        console.error('Failed to sync pixels:', e);
+        pendingPixels.push(...pixelsToSend);
+      }
+    }, 50);
+  }
+
+  async function syncFullCanvas() {
     if (isRemoteUpdate) return;
     try {
-      await db.collection('lobbies').doc(lobbyID).set({
+      const lobbyRef = db.collection('lobbies').doc(lobbyID);
+      await lobbyRef.set({
         size: GRID_SIZE,
-        grid: grid.flat(),
+        pixels: [],
+        canvasData: JSON.stringify(grid.flat()),
+        lastUser: currentUsername,
+        lastUid: currentuid,
         lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
       }, { merge: true });
     } catch (e) {
-      console.error('Failed to sync canvas updates:', e);
+      console.error('Failed to sync full canvas:', e);
     }
   }
 
@@ -531,6 +756,274 @@
     }
   };
 
+  // Friends System Actions
+  window.switchFriendTab = function(tab) {
+    document.getElementById('friendTabAdd').classList.toggle('active', tab === 'add');
+    document.getElementById('friendTabPending').classList.toggle('active', tab === 'pending');
+    document.getElementById('friendTabReceived').classList.toggle('active', tab === 'received');
+    document.getElementById('friendTabList').classList.toggle('active', tab === 'list');
+
+    document.getElementById('friendTabContentAdd').style.display = (tab === 'add') ? 'block' : 'none';
+    document.getElementById('friendTabContentPending').style.display = (tab === 'pending') ? 'block' : 'none';
+    document.getElementById('friendTabContentReceived').style.display = (tab === 'received') ? 'block' : 'none';
+    document.getElementById('friendTabContentList').style.display = (tab === 'list') ? 'block' : 'none';
+    refreshFriendsLists();
+  }
+
+  document.getElementById('friendSendBtn').onclick = async () => {
+    const query = document.getElementById('friendSearchInput').value.trim();
+    const statusEl = document.getElementById('friendSearchStatus');
+    if (!query) return;
+    statusEl.textContent = 'Searching...';
+
+    try {
+      const usersRef = db.collection('users');
+      let snap = await usersRef.where('username', '==', query).get();
+      
+      if (snap.empty) {
+        snap = await usersRef.where('email', '==', query).get();
+      }
+
+      if (snap.empty) {
+        statusEl.textContent = 'User not found.';
+        return;
+      }
+
+      let targetDoc = null;
+      snap.forEach(d => { targetDoc = d; });
+      const targetData = targetDoc.data();
+      const targetUid = targetData.uid;
+
+      if (targetUid === currentuid) {
+        statusEl.textContent = 'You cannot add yourself.';
+        return;
+      }
+
+      if ((userProfileData.friends || []).includes(targetUid)) {
+        statusEl.textContent = 'Already friends with this user.';
+        return;
+      }
+
+      if ((userProfileData.pending || []).includes(targetUid)) {
+        statusEl.textContent = 'Friend request already pending.';
+        return;
+      }
+
+      const myRef = db.collection('users').doc(currentuid);
+      const targetRef = db.collection('users').doc(targetUid);
+
+      await db.runTransaction(async (transaction) => {
+        const myDoc = await transaction.get(myRef);
+        const tDoc = await transaction.get(targetRef);
+        if (!myDoc.exists || !tDoc.exists) throw new Error("User missing");
+
+        let myPending = myDoc.data().pending || [];
+        let targetReceived = tDoc.data().received || [];
+
+        if (!myPending.includes(targetUid)) myPending.push(targetUid);
+        if (!targetReceived.includes(currentuid)) targetReceived.push(currentuid);
+
+        transaction.update(myRef, { pending: myPending });
+        transaction.update(targetRef, { received: targetReceived });
+      });
+
+      document.getElementById('friendSearchInput').value = '';
+      statusEl.textContent = 'Friend request sent successfully!';
+      refreshFriendsLists();
+    } catch (e) {
+      statusEl.textContent = 'Error sending friend request.';
+    }
+  };
+
+  window.cancelPendingRequest = async function(targetUid) {
+    try {
+      const myRef = db.collection('users').doc(currentuid);
+      const targetRef = db.collection('users').doc(targetUid);
+
+      await db.runTransaction(async (transaction) => {
+        const myDoc = await transaction.get(myRef);
+        const tDoc = await transaction.get(targetRef);
+
+        let myPending = myDoc.exists ? (myDoc.data().pending || []) : [];
+        let targetReceived = tDoc.exists ? (tDoc.data().received || []) : [];
+
+        myPending = myPending.filter(id => id !== targetUid);
+        targetReceived = targetReceived.filter(id => id !== currentuid);
+
+        transaction.update(myRef, { pending: myPending });
+        if (tDoc.exists) transaction.update(targetRef, { received: targetReceived });
+      });
+    } catch (e) {
+      console.error('Failed to cancel request:', e);
+    }
+  };
+
+  window.acceptReceivedRequest = async function(targetUid) {
+    try {
+      const myRef = db.collection('users').doc(currentuid);
+      const targetRef = db.collection('users').doc(targetUid);
+
+      await db.runTransaction(async (transaction) => {
+        const myDoc = await transaction.get(myRef);
+        const tDoc = await transaction.get(targetRef);
+        if (!myDoc.exists || !tDoc.exists) throw new Error("User missing");
+
+        let myReceived = myDoc.data().received || [];
+        let myFriends = myDoc.data().friends || [];
+        let targetPending = tDoc.data().pending || [];
+        let targetFriends = tDoc.data().friends || [];
+
+        myReceived = myReceived.filter(id => id !== targetUid);
+        if (!myFriends.includes(targetUid)) myFriends.push(targetUid);
+
+        targetPending = targetPending.filter(id => id !== currentuid);
+        if (!targetFriends.includes(currentuid)) targetFriends.push(currentuid);
+
+        transaction.update(myRef, { received: myReceived, friends: myFriends });
+        transaction.update(targetRef, { pending: targetPending, friends: targetFriends });
+      });
+    } catch (e) {
+      console.error('Failed to accept request:', e);
+    }
+  };
+
+  window.declineReceivedRequest = async function(targetUid) {
+    try {
+      const myRef = db.collection('users').doc(currentuid);
+      const targetRef = db.collection('users').doc(targetUid);
+
+      await db.runTransaction(async (transaction) => {
+        const myDoc = await transaction.get(myRef);
+        const tDoc = await transaction.get(targetRef);
+
+        let myReceived = myDoc.exists ? (myDoc.data().received || []) : [];
+        let targetPending = tDoc.exists ? (tDoc.data().pending || []) : [];
+
+        myReceived = myReceived.filter(id => id !== targetUid);
+        targetPending = targetPending.filter(id => id !== currentuid);
+
+        transaction.update(myRef, { received: myReceived });
+        if (tDoc.exists) transaction.update(targetRef, { pending: targetPending });
+      });
+    } catch (e) {
+      console.error('Failed to decline request:', e);
+    }
+  };
+
+  window.removeFriend = async function(targetUid) {
+    if (!confirm('Remove user from friends?')) return;
+    try {
+      const myRef = db.collection('users').doc(currentuid);
+      const targetRef = db.collection('users').doc(targetUid);
+
+      await db.runTransaction(async (transaction) => {
+        const myDoc = await transaction.get(myRef);
+        const tDoc = await transaction.get(targetRef);
+        if (!myDoc.exists) throw new Error("User missing");
+
+        let myFriends = myDoc.data().friends || [];
+        myFriends = myFriends.filter(id => id !== targetUid);
+        transaction.update(myRef, { friends: myFriends });
+
+        if (tDoc.exists) {
+          let targetFriends = tDoc.data().friends || [];
+          targetFriends = targetFriends.filter(id => id !== currentuid);
+          transaction.update(targetRef, { friends: targetFriends });
+        }
+      });
+    } catch (e) {
+      console.error('Failed to remove friend:', e);
+    }
+  };
+
+  window.joinFriendLobby = async function(targetLobby) {
+    if (!targetLobby) {
+      alert("This friend is not currently in an active lobby.");
+      return;
+    }
+    if (targetLobby === lobbyID) {
+      alert("You are already in this lobby!");
+      return;
+    }
+    
+    if (unsubscribeLobby) unsubscribeLobby();
+    try {
+      const oldLobbyRef = db.collection('lobbies').doc(lobbyID);
+      const doc = await oldLobbyRef.get();
+      if (doc.exists) {
+        let players = doc.data().players || [];
+        players = players.filter(p => p !== currentUsername);
+        await oldLobbyRef.update({ players });
+      }
+    } catch(e) {}
+
+    lobbyID = targetLobby;
+    document.getElementById('lobbyLabel').innerText = 'Lobby: ' + lobbyID;
+    document.getElementById('friendsMenu').style.display = 'none';
+    
+    grid = Array.from({length: GRID_SIZE}, () => Array(GRID_SIZE).fill('#FFFFFF'));
+    render();
+    initMultiplayer();
+  };
+
+  async function refreshFriendsLists() {
+    const pendingList = document.getElementById('pendingSlotList');
+    pendingList.innerHTML = 'Loading...';
+    const pendingIds = userProfileData.pending || [];
+    if (pendingIds.length === 0) {
+      pendingList.innerHTML = '<div style="padding:10px; font-size:14px; color:#333; text-align:center;">No pending requests.</div>';
+    } else {
+      pendingList.innerHTML = '';
+      for (let uid of pendingIds) {
+        let uDoc = await db.collection('users').doc(uid).get();
+        let uName = uDoc.exists ? uDoc.data().username : 'Unknown User';
+        const div = document.createElement('div');
+        div.className = 'friend-slot';
+        div.innerHTML = `<div class="friend-info"><span>${uName}</span></div><div><button class="del-btn" onclick="cancelPendingRequest('${uid}')">Cancel</button></div>`;
+        pendingList.appendChild(div);
+      }
+    }
+
+    const receivedList = document.getElementById('receivedSlotList');
+    receivedList.innerHTML = 'Loading...';
+    const receivedIds = userProfileData.received || [];
+    if (receivedIds.length === 0) {
+      receivedList.innerHTML = '<div style="padding:10px; font-size:14px; color:#333; text-align:center;">No received requests.</div>';
+    } else {
+      receivedList.innerHTML = '';
+      for (let uid of receivedIds) {
+        let uDoc = await db.collection('users').doc(uid).get();
+        let uName = uDoc.exists ? uDoc.data().username : 'Unknown User';
+        const div = document.createElement('div');
+        div.className = 'friend-slot';
+        div.innerHTML = `<div class="friend-info"><span>${uName}</span></div><div><button class="accept-btn" onclick="acceptReceivedRequest('${uid}')">Accept</button><button class="decline-btn" onclick="declineReceivedRequest('${uid}')">Decline</button></div>`;
+        receivedList.appendChild(div);
+      }
+    }
+
+    const friendsList = document.getElementById('friendsSlotList');
+    friendsList.innerHTML = 'Loading...';
+    const friendIds = userProfileData.friends || [];
+    if (friendIds.length === 0) {
+      friendsList.innerHTML = '<div style="padding:10px; font-size:14px; color:#333; text-align:center;">No friends yet.</div>';
+    } else {
+      friendsList.innerHTML = '';
+      for (let uid of friendIds) {
+        let uDoc = await db.collection('users').doc(uid).get();
+        let uName = 'Unknown User';
+        let uLobby = '';
+        if (uDoc.exists) {
+          uName = uDoc.data().username || 'Unknown User';
+          uLobby = uDoc.data().lobby || '';
+        }
+        const div = document.createElement('div');
+        div.className = 'friend-slot';
+        div.innerHTML = `<div class="friend-info"><span>${uName}</span> ${uLobby ? `<small style="color:#666; display:block;">Lobby: ${uLobby}</small>` : ''}</div><div><button class="join-btn" onclick="joinFriendLobby('${uLobby}')">Join</button><button class="del-btn" onclick="removeFriend('${uid}')">Remove</button></div>`;
+        friendsList.appendChild(div);
+      }
+    }
+  }
+
   document.getElementById('picker').oninput = (e) => {
     currentColor = e.target.value;
     document.getElementById('hexInput').value = currentColor;
@@ -565,6 +1058,12 @@
   };
   document.getElementById('exitChatMenuBtn').onclick = () => document.getElementById('chatMenu').style.display = 'none';
 
+  document.getElementById('openFriendsMenuBtn').onclick = () => {
+    document.getElementById('friendsMenu').style.display = 'block';
+    refreshFriendsLists();
+  };
+  document.getElementById('exitFriendsMenuBtn').onclick = () => document.getElementById('friendsMenu').style.display = 'none';
+
   function refreshChatList() {
     const list = document.getElementById('chatSlotList');
     list.innerHTML = '';
@@ -572,7 +1071,6 @@
       list.innerHTML = '<div style="padding:10px; font-size:14px; color:#333; text-align:center;">No messages yet.</div>';
       return;
     }
-    // Loop in reverse so newest messages appear at the top
     for (let i = chatMessagesCache.length - 1; i >= 0; i--) {
       const msg = chatMessagesCache[i];
       const div = document.createElement('div');
@@ -617,7 +1115,7 @@
       canvas.width = GRID_SIZE; canvas.height = GRID_SIZE;
       autoFit(); render();
       document.getElementById('saveMenu').style.display = 'none';
-      syncCanvasToCloud();
+      syncFullCanvas();
     } catch (e) { alert('Failed to load.'); }
   };
 
@@ -633,7 +1131,7 @@
     try {
       const snap = await db.collection('saves').where('user_id', '==', currentUser.uid).get();
       if (snap.empty) { list.innerHTML = 'No saves found.'; return; }
-      list.innerHTML = '';
+      list.innerHTML = '---';
       snap.forEach(doc => {
         const d = doc.data();
         const div = document.createElement('div');
