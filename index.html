@@ -97,7 +97,10 @@
     <form id="authForm" onsubmit="return false;" style="display:flex; flex-direction:column; gap:12px; margin:0;">
       <input type="text" id="firstNameIn" placeholder="First Name" style="display:none;" autocomplete="given-name">
       <input type="email" id="emailIn" placeholder="Email" autocomplete="username">
-      <input type="password" id="passIn" placeholder="Password" autocomplete="current-password">
+      <div style="position:relative; width:100%;">
+        <input type="password" id="passIn" placeholder="Password" autocomplete="current-password" style="width:100%; padding-right:40px;">
+        <button type="button" id="togglePassBtn" style="position:absolute; right:4px; top:50%; transform:translateY(-50%); width:32px; height:32px; padding:0; background:transparent; border:none; color:#aaa; font-size:14px; cursor:pointer; display:flex; align-items:center; justify-content:center;">✖</button>
+      </div>
       <input type="text" id="lobbyIn" placeholder="Lobby Name (optional)">
       <div id="authError"></div>
       <button id="authBtn" type="submit">Login</button>
@@ -123,7 +126,12 @@
     <button onclick="logout()" style="width:auto; padding:5px 10px; font-size:11px" type="button">Exit</button>
   </div>
   <div id="layout">
-    <div id="canvasWrap"><canvas id="canvas" tabindex="0"></canvas></div>
+    <div id="canvasWrap">
+      <canvas id="canvas" tabindex="0"></canvas>
+      <button id="fullscreenBtn" type="button" style="position:absolute; bottom:15px; right:15px; width:44px; height:44px; border-radius:50%; background:var(--accent); color:white; border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 4px 12px rgba(0,0,0,0.3); z-index:100;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+      </button>
+    </div>
     <div id="sidebar">
       <div class="label">Tools</div>
       <button class="tool active" id="brushBtn" type="button">Brush</button>
@@ -230,10 +238,37 @@
   let unsubscribeLobby = null;
   let unsubscribeUserDoc = null;
   let isRemoteUpdate = false;
+  let hasInitializedCanvas = false;
   let chatMessagesCache = [];
   let pendingPixels = [];
   let syncTimer = null;
   let userProfileData = { friends: [], pending: [], received: [] };
+
+  // Password show toggle implementation
+  const togglePassBtn = document.getElementById('togglePassBtn');
+  const passIn = document.getElementById('passIn');
+  togglePassBtn.onclick = () => {
+    if (passIn.type === 'password') {
+      passIn.type = 'text';
+      togglePassBtn.textContent = '✔';
+    } else {
+      passIn.type = 'password';
+      togglePassBtn.textContent = '✖';
+    }
+  };
+
+  // Fullscreen button implementation
+  document.getElementById('fullscreenBtn').onclick = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(err => {
+        console.error(`Error attempting to enable fullscreen: ${err.message}`);
+      });
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
+    }
+  };
 
   window.showTab = function(mode) {
     authMode = mode;
@@ -280,14 +315,12 @@
       if (snap.empty) {
         return nameToCheck;
       }
-      // If name exists, check if it belongs to current user updating their own profile
       let belongsToCurrentUser = false;
       snap.forEach(doc => {
         if (doc.id === currentuid) belongsToCurrentUser = true;
       });
       if (belongsToCurrentUser) return nameToCheck;
 
-      // Append random 4 digit tag like #4819
       const randTag = Math.floor(1000 + Math.random() * 9000);
       nameToCheck = `${baseName}#${randTag}`;
     }
@@ -301,7 +334,6 @@
       
       const rawName = user.displayName ? user.displayName.split(' ')[0] : (user.email ? user.email.split('@')[0] : 'User');
       
-      // Check if user document already exists and has a resolved unique username
       const userDocRef = db.collection('users').doc(currentuid);
       const userDocSnap = await userDocRef.get();
       
@@ -566,6 +598,7 @@
   }
 
   function initMultiplayer() {
+    hasInitializedCanvas = false;
     const lobbyRef = db.collection('lobbies').doc(lobbyID);
     
     db.collection('users').doc(currentuid).set({ lobby: lobbyID }, { merge: true });
@@ -577,23 +610,25 @@
           pixels: [], 
           canvasData: JSON.stringify(grid.flat()), 
           players: [currentUsername], 
-          chat: [] 
+          chat: [],
+          lastUid: currentuid
         });
       } else {
         let players = doc.data().players || [];
         if (!players.includes(currentUsername)) {
           players.push(currentUsername);
           lobbyRef.update({ players });
-        } else {
-          const data = doc.data();
-          if (data.canvasData) {
-            const flat = JSON.parse(data.canvasData);
-            if (flat.length === GRID_SIZE * GRID_SIZE) {
-              for (let i = 0; i < GRID_SIZE; i++) {
-                grid[i] = flat.slice(i * GRID_SIZE, (i + 1) * GRID_SIZE);
-              }
-              render();
+        }
+        
+        const data = doc.data();
+        if (data.canvasData && !hasInitializedCanvas) {
+          hasInitializedCanvas = true;
+          const flat = JSON.parse(data.canvasData);
+          if (flat.length === GRID_SIZE * GRID_SIZE) {
+            for (let i = 0; i < GRID_SIZE; i++) {
+              grid[i] = flat.slice(i * GRID_SIZE, (i + 1) * GRID_SIZE);
             }
+            render();
           }
         }
       }
@@ -603,6 +638,19 @@
       if (!doc.exists) return;
       const data = doc.data();
       if (data) {
+        if (doc.metadata.hasPendingWrites) return;
+
+        if (!hasInitializedCanvas && data.canvasData) {
+          hasInitializedCanvas = true;
+          const flat = JSON.parse(data.canvasData);
+          if (flat.length === GRID_SIZE * GRID_SIZE) {
+            for (let i = 0; i < GRID_SIZE; i++) {
+              grid[i] = flat.slice(i * GRID_SIZE, (i + 1) * GRID_SIZE);
+            }
+            render();
+          }
+        }
+
         if (data.size && data.size !== GRID_SIZE) {
           GRID_SIZE = data.size;
           document.getElementById('sizeRange').value = GRID_SIZE;
@@ -612,7 +660,7 @@
           autoFit();
         }
 
-        if (data.canvasData && data.lastUid !== currentuid) {
+        if (data.canvasData && data.lastUid !== currentuid && hasInitializedCanvas) {
           isRemoteUpdate = true;
           const flat = JSON.parse(data.canvasData);
           if (flat.length === GRID_SIZE * GRID_SIZE) {
@@ -624,7 +672,7 @@
           isRemoteUpdate = false;
         }
 
-        if (data.pixels && data.lastUid !== currentuid && data.pixels.length > 0) {
+        if (data.pixels && data.lastUid !== currentuid && data.pixels.length > 0 && hasInitializedCanvas) {
           isRemoteUpdate = true;
           data.pixels.forEach(p => {
             if (p.x >= 0 && p.x < GRID_SIZE && p.y >= 0 && p.y < GRID_SIZE) {
@@ -1131,7 +1179,7 @@
     try {
       const snap = await db.collection('saves').where('user_id', '==', currentUser.uid).get();
       if (snap.empty) { list.innerHTML = 'No saves found.'; return; }
-      list.innerHTML = '---';
+      list.innerHTML = '';
       snap.forEach(doc => {
         const d = doc.data();
         const div = document.createElement('div');
